@@ -202,6 +202,8 @@ class ReplicaManager(threading.Thread):
 
             self.update_log.append(log_record)
 
+            return ts.value()
+
         return ts
 
     def _apply_query(self, q_op):
