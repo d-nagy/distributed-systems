@@ -7,6 +7,7 @@ import threading
 import time
 import Pyro4
 from signalhandler import SignalHandler
+from vectorclock import VectorClock
 
 
 data_dir = './movielens/'
@@ -130,8 +131,8 @@ class ReplicaManager(threading.Thread):
         self.status = 0
 
         # Gossip Architecture State
-        self.value_ts = [0, 0, 0]
-        self.replica_ts = [0, 0, 0]
+        self.value_ts = VectorClock(3)
+        self.replica_ts = VectorClock(3)
         self.update_log = []
         self.ts_table = [(0, 0, 0), (0, 0, 0)]
         self.executed = []
@@ -150,7 +151,7 @@ class ReplicaManager(threading.Thread):
                 _id, ts, u_op, u_prev, u_id = update
 
                 self.ts_lock.acquire()
-                stable = self._ts_lte(u_prev, self.value_ts)
+                stable = u_prev <= self.value_ts
                 self.ts_lock.release()
 
                 if stable:
@@ -162,9 +163,9 @@ class ReplicaManager(threading.Thread):
 
                 self.ts_lock.acquire()
 
-                if self._ts_lte(q_prev, self.value_ts):
+                if q_prev <= self.value_ts:
                     val = self._apply_query(q_op)
-                    new = self.value_ts
+                    new = self.value_ts.value()
                     self.query_results[(q_op, q_prev)].put((val, new))
 
                 self.ts_lock.release()
@@ -177,6 +178,7 @@ class ReplicaManager(threading.Thread):
         print('Query received: ', q_op, q_prev)
         response = None
 
+        q_prev = VectorClock.fromiterable(q_prev)
         self.query_results[(q_op, q_prev)] = queue.Queue(maxsize=1)
         self.pending_queries.put((q_op, q_prev))
         response = self.query_results[(q_op, q_prev)].get()
@@ -189,11 +191,13 @@ class ReplicaManager(threading.Thread):
         ts = None
 
         if u_id not in self.executed:
-            self._increment_ts(self.replica_ts)
+            self.replica_ts.increment(self._id)
 
             ts = u_prev[:]
-            ts[self._id] = self.replica_ts[self._id]
+            ts[self._id] = self.replica_ts.value()[self._id]
+            ts = VectorClock.fromiterable(ts)
 
+            u_prev = VectorClock.fromiterable(u_prev)
             log_record = (self._id, ts, u_op, u_prev, u_id)
 
             self.update_log.append(log_record)
@@ -224,7 +228,7 @@ class ReplicaManager(threading.Thread):
         self._apply_update(u_op)
 
         self.ts_lock.acquire()
-        self.value_ts = self._ts_merge(self.value_ts, ts)
+        self.value_ts.merge(ts)
         self.ts_lock.release()
 
         self.executed.append(u_id)
@@ -232,27 +236,16 @@ class ReplicaManager(threading.Thread):
     def _merge_update_log(self, m_log):
         for record in m_log:
             _id, ts, u_op, u_prev, u_id = record
-            if not self._ts_lte(ts, self.replica_ts):
+            if not ts <= self.replica_ts:
                 self.update_log.append(record)
 
     def _get_stable_updates(self):
         self.ts_lock.acquire()
         stable = [record for record in self.update_log
-                  if self._ts_lte(record[3], self.value_ts)]
+                  if record[3] <= self.value_ts]
         self.ts_lock.release()
 
         # Sort stable updates according to vector timestamps
-
-    def _increment_ts(self, ts):
-        ts[self._id] += 1
-
-    @staticmethod
-    def _ts_lte(ts_a, ts_b):
-        return all([i <= j for i, j in zip(ts_a, ts_b)])
-
-    @staticmethod
-    def _ts_merge(ts_a, ts_b):
-        return list(map(max, zip(ts_a, ts_b)))
 
     @staticmethod
     def _parse_q_op(op):
