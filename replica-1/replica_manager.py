@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 import Pyro4
+from signalhandler import SignalHandler
 
 
 data_dir = './movielens/'
@@ -46,12 +47,17 @@ def get_avg_movie_rating(movieId):
     return movie_rating
 
 
-def get_movie_ratings(userId):
+def get_movie_ratings(userId=None, movieId=None):
     ratings = []
     with open(rating_file, newline='') as csvfile:
         reader = csv.DictReader(csvfile)
-
-        ratings = [dict(row) for row in reader if int(row['userId']) == userId]
+        ratings = [dict(row) for row in reader]
+        if userId:
+            ratings = [row for row in ratings
+                       if int(row['userId']) == userId]
+        if movieId:
+            ratings = [row for row in ratings
+                       if int(row['movieId']) == movieId]
 
     return ratings
 
@@ -134,15 +140,10 @@ class ReplicaManager(threading.Thread):
 
         self.stopper = stopper
         self.ts_lock = threading.Lock()
-        self.log_lock = threading.Lock()
-        self.exec_lock = threading.Lock()
-        self.q_res_lock = threading.Lock()
 
     def run(self):
         while not self.stopper.is_set():
-            self.log_lock.acquire()
             updates = self.update_log
-            self.log_lock.release()
 
             # Apply stable updates
             for update in updates:
@@ -154,41 +155,39 @@ class ReplicaManager(threading.Thread):
 
                 if stable:
                     self._execute_update(u_op, u_id, ts)
-                    try:
-                        q_op, q_prev = self.pending_queries.get(block=False)
 
-                        self.ts_lock.acquire()
-                        self.q_res_lock.acquire()
+            # Try to apply next pending query
+            try:
+                q_op, q_prev = self.pending_queries.get(block=False)
 
-                        if self._ts_lte(q_prev, self.value_ts):
-                            val = self._apply_query(q_op)
-                            new = self.value_ts
-                            self.query_results[(q_op, q_prev)] = (val, new)
+                self.ts_lock.acquire()
 
-                        self.q_res_lock.release()
-                        self.ts_lock.release()
-                    except queue.Empty:
-                        pass
+                if self._ts_lte(q_prev, self.value_ts):
+                    val = self._apply_query(q_op)
+                    new = self.value_ts
+                    self.query_results[(q_op, q_prev)].put((val, new))
+
+                self.ts_lock.release()
+            except queue.Empty:
+                pass
 
         print('Stopper set.')
 
     def send_query(self, q_op, q_prev):
         print('Query received: ', q_op, q_prev)
-        val, new = None, None
+        response = None
 
+        self.query_results[(q_op, q_prev)] = queue.Queue(maxsize=1)
         self.pending_queries.put((q_op, q_prev))
-        self.q_res_lock.acquire()
-        self.query_results[(q_op, q_prev)] = None
-        self.q_res_lock.release()
-        # Wait for query result
+        response = self.query_results[(q_op, q_prev)].get()
+        del self.query_results[(q_op, q_prev)]
 
-        return (val, new)
+        return response
 
     def send_update(self, u_op, u_prev, u_id):
         print('Update received: ', u_op, u_prev, u_id)
         ts = None
 
-        self.exec_lock.acquire()
         if u_id not in self.executed:
             self._increment_ts(self.replica_ts)
 
@@ -197,10 +196,7 @@ class ReplicaManager(threading.Thread):
 
             log_record = (self._id, ts, u_op, u_prev, u_id)
 
-            self.log_lock.acquire()
             self.update_log.append(log_record)
-            self.log_lock.release()
-        self.exec_lock.release()
 
         return ts
 
@@ -208,24 +204,44 @@ class ReplicaManager(threading.Thread):
         print('Query applied.')
         val = None
 
-        # Apply query
+        op, args = q_op
+        query = self._parse_q_op(op)
+        val = query(*args)
 
         return val
 
     def _apply_update(self, u_op):
         print('Update applied.')
-        # Apply update
+
+        op, args = u_op
+        update = self._parse_u_op(op)
+        update(*args)
 
     def _execute_update(self, u_op, u_id, ts):
+        if u_id in self.executed:
+            return
+
         self._apply_update(u_op)
 
         self.ts_lock.acquire()
         self.value_ts = self._ts_merge(self.value_ts, ts)
         self.ts_lock.release()
 
-        self.exec_lock.acquire()
         self.executed.append(u_id)
-        self.exec_lock.release
+
+    def _merge_update_log(self, m_log):
+        for record in m_log:
+            _id, ts, u_op, u_prev, u_id = record
+            if not self._ts_lte(ts, self.replica_ts):
+                self.update_log.append(record)
+
+    def _get_stable_updates(self):
+        self.ts_lock.acquire()
+        stable = [record for record in self.update_log
+                  if self._ts_lte(record[3], self.value_ts)]
+        self.ts_lock.release()
+
+        # Sort stable updates according to vector timestamps
 
     def _increment_ts(self, ts):
         ts[self._id] += 1
@@ -238,23 +254,23 @@ class ReplicaManager(threading.Thread):
     def _ts_merge(ts_a, ts_b):
         return list(map(max, zip(ts_a, ts_b)))
 
+    @staticmethod
+    def _parse_q_op(op):
+        return {
+            'get_ratings': get_movie_ratings,
+            'get_genres': get_movie_genres,
+            'get_movie': get_movie,
+            'get_tags': get_movie_tags,
+            'search_title': search_by_title,
+            'search_genre': search_by_genre
+        }[op]
 
-class SignalHandler:
-    stopper = None
-    worker = None
-
-    def __init__(self, stopper, worker):
-        self.stopper = stopper
-        self.worker = worker
-
-    def __call__(self, signum, frame):
-        print('Handler called.')
-        self.stopper.set()
-        self.worker.join()
-
-        print('Exiting.')
-
-        sys.exit(0)
+    @staticmethod
+    def _parse_u_op(op):
+        return {
+            'add_rating': submit_rating,
+            'add_tag': submit_tag
+        }[op]
 
 
 if __name__ == '__main__':
