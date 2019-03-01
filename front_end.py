@@ -32,9 +32,18 @@ class FrontEnd:
             return val
 
     def _choose_replica(self):
-        active = [server for server in self.servers
-                  if server.get_status() == Status.ACTIVE.value]
-        return random.choice(active)
+        stat = {server: server.get_status() for server in self.servers}
+        available = []
+
+        if stat.values().count(Status.OFFLINE.value) == len(self.servers):
+            raise Exception('All servers offline')
+        elif stat.values().count(Status.OVERLOADED.value) < len(self.servers):
+            available = [k for k in stat.keys()
+                         if stat[k] == Status.ACTIVE.value]
+        else:
+            available = list(stat.keys())
+
+        return random.choice(available)
 
     @staticmethod
     def _request_type(request):
