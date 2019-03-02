@@ -18,7 +18,8 @@ ratings_fields = ['userId', 'movieId', 'rating', 'timestamp']
 tags_fields = ['userId', 'movieId', 'tag', 'timestamp']
 
 
-def submit_rating(userId, movieId, rating):
+def submit_rating(userId, title, rating):
+    movieId = get_movie_by_title(title)['movieId']
     with open(rating_file, 'a', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, ratings_fields)
 
@@ -26,7 +27,8 @@ def submit_rating(userId, movieId, rating):
                          'rating': rating, 'timestamp': str(int(time.time()))})
 
 
-def submit_tag(userId, movieId, tag):
+def submit_tag(userId, title, tag):
+    movieId = get_movie_by_title(title)['movieId']
     with open(tag_file, 'a', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, tags_fields)
 
@@ -34,7 +36,8 @@ def submit_tag(userId, movieId, tag):
                          'tag': tag, 'timestamp': str(int(time.time()))})
 
 
-def get_avg_movie_rating(movieId):
+def get_avg_movie_rating(title):
+    movieId = get_movie_by_title(title)['movieId']
     ratings = []
     with open(rating_file, newline='') as csvfile:
         reader = csv.DictReader(csvfile)
@@ -46,7 +49,7 @@ def get_avg_movie_rating(movieId):
     return movie_rating
 
 
-def get_movie_ratings(userId=None, movieId=None):
+def get_movie_ratings(userId=None, title=None):
     ratings = []
     with open(rating_file, newline='') as csvfile:
         reader = csv.DictReader(csvfile)
@@ -54,21 +57,40 @@ def get_movie_ratings(userId=None, movieId=None):
         if userId:
             ratings = [row for row in ratings
                        if int(row['userId']) == userId]
-        if movieId:
+        if title:
+            movieId = get_movie_by_title(title)['movieId']
             ratings = [row for row in ratings
                        if int(row['movieId']) == movieId]
+
+    ratings = [{'title': get_movie_by_id(int(r['movieId']))['title'],
+                'rating': r['rating']} for r in ratings]
 
     return ratings
 
 
-def get_movie_genres(movieId):
-    movie = get_movie(movieId)
+def get_movie_genres(title):
+    movie = get_movie_by_title(title)
     genres = movie['genres'].split('|')
     return genres
 
 
-def get_movie(movieId):
-    movie = None
+def get_movie_by_title(title):
+    movie = []
+    with open(movie_file, newline='') as csvfile:
+        reader = csv.DictReader(csvfile)
+
+        movie = next(reader, None)
+        while movie is not None:
+            if movie['title'].lower()[:-7] != title.lower():
+                movie = next(reader, None)
+            else:
+                break
+
+    return dict(movie)
+
+
+def get_movie_by_id(movieId):
+    movie = []
     with open(movie_file, newline='') as csvfile:
         reader = csv.DictReader(csvfile)
 
@@ -82,7 +104,8 @@ def get_movie(movieId):
     return dict(movie)
 
 
-def get_movie_tags(movieId):
+def get_movie_tags(title):
+    movieId = get_movie_by_title(title)['movieId']
     tags = []
     with open(tag_file, newline='') as csvfile:
         reader = csv.DictReader(csvfile)
@@ -112,6 +135,24 @@ def search_by_genre(genre):
 
         movies = [dict(row) for row in reader
                   if genre in row['genres'].lower()]
+
+    return movies
+
+
+def search_by_tag(tag):
+    tag = tag.lower()
+    movies = []
+    with open(tag_file, newline='') as csvfile:
+        reader = csv.DictReader(csvfile)
+
+        movies = [row['movieId'] for row in reader
+                  if tag in row['tag'].lower()]
+
+    with open(movie_file, newline='') as csvfile:
+        reader = csv.DictReader(csvfile)
+
+        movies = [dict(row) for row in reader
+                  if row['movieId'] in movies]
 
     return movies
 
@@ -266,19 +307,21 @@ class ReplicaManager(threading.Thread):
     @staticmethod
     def _parse_q_op(op):
         return {
-            'get_ratings': get_movie_ratings,
-            'get_genres': get_movie_genres,
-            'get_movie': get_movie,
-            'get_tags': get_movie_tags,
-            'search_title': search_by_title,
-            'search_genre': search_by_genre
+            ROp.GET_AVG_RATING.value: get_avg_movie_rating,
+            ROp.GET_RATINGS.value: get_movie_ratings,
+            ROp.GET_GENRES.value: get_movie_genres,
+            ROp.GET_MOVIE.value: get_movie,
+            ROp.GET_TAGS.value: get_movie_tags,
+            ROp.SEARCH_TITLE.value: search_by_title,
+            ROp.SEARCH_GENRE.value: search_by_genre,
+            ROp.SEARCH_TAG.value: search_by_tag
         }[op]
 
     @staticmethod
     def _parse_u_op(op):
         return {
-            'add_rating': submit_rating,
-            'add_tag': submit_tag
+            ROp.ADD_RATING.value: submit_rating,
+            ROp.ADD_TAG.value: submit_tag
         }[op]
 
 
@@ -291,7 +334,7 @@ if __name__ == '__main__':
 
     from signalhandler import SignalHandler
     from vectorclock import VectorClock
-    from statusenum import Status
+    from enums import Status, ROp
 
     stopper = threading.Event()
     rm = ReplicaManager(ID, stopper)

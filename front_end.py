@@ -3,31 +3,29 @@ import random
 import uuid
 from enum import Enum
 from vectorclock import VectorClock
-from statusenum import Status
-
-
-class RType(Enum):
-    UPDATE = 0
-    QUERY = 1
+from enums import Status, RType
 
 
 @Pyro4.expose
 class FrontEnd:
     def __init__(self):
         self.servers = self._find_replicas()
+        self.rm = self._choose_replica()
         self.ts = VectorClock(len(self.servers))
 
     def send_request(self, request):
         r_type = self._request_type(request)
-        rm = self._choose_replica()
+        rm_status = self.rm.get_status()
+        if rm_status == Status.OFFLINE:
+            self.rm = self._choose_replica()
 
         if r_type == RType.UPDATE:
-            rm_ts = rm.send_update(request, self.ts.value(), str(uuid.uuid4()))
-            if rm_ts is None:
-                return 'Request has already been processed'
+            rm_ts = self.rm.send_update(
+                request, self.ts.value(), str(uuid.uuid4()))
             self.ts.merge(VectorClock.fromiterable(rm_ts))
+            return 'Update submitted!'
         elif r_type == RType.QUERY:
-            val, rm_ts = rm.send_query(request, self.ts.value())
+            val, rm_ts = self.rm.send_query(request, self.ts.value())
             self.ts.merge(VectorClock.fromiterable(rm_ts))
             return val
 
@@ -48,12 +46,12 @@ class FrontEnd:
     @staticmethod
     def _request_type(request):
         op = request[0]
-        op_command = op.split('_')[0]
+        op_type = op.split('.')[0]
 
-        if op_command in ['add', 'del', 'mod']:
+        if op_type == 'u':
             return RType.UPDATE
 
-        if op_command in ['get', 'search']:
+        if op_type == 'q':
             return RType.QUERY
 
         raise ValueError('command not recognised')
