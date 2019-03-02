@@ -5,6 +5,8 @@ from enum import Enum
 from vectorclock import VectorClock
 from enums import Status, RType
 
+REPLICA_NUM = 3
+
 
 @Pyro4.expose
 class FrontEnd:
@@ -17,7 +19,7 @@ class FrontEnd:
         except ValueError as e:
             print(e)
 
-        self.ts = VectorClock(len(self.servers))
+        self.ts = VectorClock(REPLICA_NUM)
 
     def send_request(self, request):
         r_type = self._request_type(request)
@@ -92,7 +94,7 @@ class FrontEnd:
             raise ValueError(
                 "No servers found! (are the movie servers running?)"
             )
-        return servers
+        return servers[:3]
 
 
 if __name__ == '__main__':
