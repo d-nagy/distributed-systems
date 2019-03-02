@@ -74,9 +74,9 @@ def get_rating():
 def format_search_result(result, search_var, search_val):
     if result:
         n = len(result)
-        titles = [row['title'] for row in result]
+        titles = "\n".join([row['title'] for row in result])
         response = f'Results for {search_var} "{search_val}" ({n} results):\n \
-                    {"\n".join(titles)}'
+                    {titles}'
     else:
         response = f'No results for {search_var} "{search_val}"'
 
@@ -108,23 +108,32 @@ def main():
             title = get_title()
             rating = get_rating()
             request = (op, userId, title, rating)
-            result = frontend.send_request(request)
-            response = f'{result}\n\nYou have rated {title} a {rating}/5'
+            try:
+                result = frontend.send_request(request)
+                response = f'{result}\n\nYou have rated {title} a {rating}/5'
+            except Exception as e:
+                response = e
 
         elif choice == '2':
             op = ROp.ADD_TAG.value
             title = get_title()
             tag = get_tag()
             request = (op, userId, title, tag)
-            result = frontend.send_request(request)
-            response = f'{result}\n\nYou have tagged {title} with "{tag}"'
+            try:
+                result = frontend.send_request(request)
+                response = f'{result}\n\nYou have tagged {title} with "{tag}"'
+            except Exception as e:
+                response = e
 
         elif choice == '3':
             op = ROp.GET_AVG_RATING.value
             title = get_title()
             request = (op, title)
-            result = frontend.send_request(request)
-            response = f'Overall average rating for {title}: {result}/5'
+            try:
+                result = frontend.send_request(request)
+                response = f'Overall average rating for {title}: {result}/5'
+            except Exception as e:
+                response = e
 
         elif choice == '4':
             op = ROp.GET_RATINGS.value
@@ -133,37 +142,51 @@ def main():
                    or leave it blank to view all of your ratings.')
             title = get_title()
             request = (op, title)
-            result = frontend.send_request(request)
-            if result:
-                if title:
-                    response = f'Your rating of {title}:\n \
-                                {"\n".join(result)}'
+            try:
+                result = frontend.send_request(request)
+                if result:
+                    result = "\n".join(result)
+                    if title:
+                        response = f'Your rating of {title}:\n{result}'
+                    else:
+                        response = f'Your ratings ({len(result)} results):\n \
+                                    {result}'
                 else:
-                    response = f'Your ratings ({len(result)} results):\n \
-                                {"\n".join(result)}'
-            else:
-                response = f'You have submitted no ratings yet.'
+                    response = f'You have submitted no ratings yet.'
+            except Exception as e:
+                response = e
 
         elif choice == '5':
             op = ROp.GET_GENRES.value
             title = get_title()
             request = (op, title)
-            result = frontend.send_request(request)
-            response = f'Genres for {title}:\n{"\n".join(result)}'
+            try:
+                result = frontend.send_request(request)
+                result = "\n".join(result)
+                response = f'Genres for {title}:\n{result}'
+            except Exception as e:
+                response = e
 
         elif choice == '6':
             op = ROp.GET_TAGS.value
             title = get_title()
             request = (op, title)
-            result = frontend.send_request(request)
-            response = f'Tags for {title}:\n{"\n".join(result)}'
+            try:
+                result = frontend.send_request(request)
+                result = "\n".join(result)
+                response = f'Tags for {title}:\n{result}'
+            except Exception as e:
+                response = e
 
         elif choice == '7':
             op = ROp.SEARCH_TITLE.value
             title = get_title()
             request = (op, title)
-            result = frontend.send_request(request)
-            response = format_search_result(result, 'title', title)
+            try:
+                result = frontend.send_request(request)
+                response = format_search_result(result, 'title', title)
+            except Exception as e:
+                response = e
 
         elif choice == '8':
             op = ROp.SEARCH_GENRE.value
@@ -176,8 +199,11 @@ def main():
             op = ROp.SEARCH_TAG.value
             tag = get_tag()
             request = (op, tag)
-            result = frontend.send_request(request)
-            response = format_search_result(result, 'tag', tag)
+            try:
+                result = frontend.send_request(request)
+                response = format_search_result(result, 'tag', tag)
+            except Exception as e:
+                response = e
 
         elif choice == '10':
             print('Bye!')
@@ -196,8 +222,15 @@ def main():
 
 
 if __name__ == '__main__':
-    with Pyro4.locateNS() as ns:
-        uri = ns.lookup('network.frontend')
-        frontend = Pyro4.Proxy(uri)
+    try:
+        with Pyro4.locateNS() as ns:
+            try:
+                uri = ns.lookup('network.frontend')
+            except Pyro4.errors.NamingError:
+                print('Could not find front end server, exiting.')
+                exit(1)
+            frontend = Pyro4.Proxy(uri)
 
-    main()
+        main()
+    except Pyro4.errors.NamingError:
+        print('Could not find Pyro nameserver, exiting.')

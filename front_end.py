@@ -9,15 +9,25 @@ from enums import Status, RType
 @Pyro4.expose
 class FrontEnd:
     def __init__(self):
-        self.servers = self._find_replicas()
-        self.rm = self._choose_replica()
+        self.servers = []
+        self.rm = None
+
+        try:
+            self.rm = self._choose_replica()
+        except ValueError as e:
+            print(e)
+
         self.ts = VectorClock(len(self.servers))
 
     def send_request(self, request):
         r_type = self._request_type(request)
         rm_status = self.rm.get_status()
         if rm_status == Status.OFFLINE:
-            self.rm = self._choose_replica()
+            try:
+                self.rm = self._choose_replica()
+            except ValueError as e:
+                print(e)
+                return e.args[0]
 
         if r_type == RType.UPDATE:
             rm_ts = self.rm.send_update(
@@ -30,6 +40,8 @@ class FrontEnd:
             return val
 
     def _choose_replica(self):
+        self.servers = self._find_replicas()
+
         stat = {server: server.get_status() for server in self.servers}
         available = []
 
@@ -65,19 +77,22 @@ class FrontEnd:
                 servers.append(Pyro4.Proxy(uri))
         if not servers:
             raise ValueError(
-                "no servers found! (have you started the movie servers first?)"
+                "No servers found! (are the movie servers running?)"
             )
         return servers
 
 
 if __name__ == '__main__':
-    fe = FrontEnd()
+    try:
+        fe = FrontEnd()
 
-    with Pyro4.Daemon() as daemon:
-        uri = daemon.register(fe)
-        with Pyro4.locateNS() as ns:
-            ns.register('network.frontend', uri)
+        with Pyro4.Daemon() as daemon:
+            uri = daemon.register(fe)
+            with Pyro4.locateNS() as ns:
+                ns.register('network.frontend', uri)
 
-        print('Front end ready.')
+            print('Front end ready.')
 
-        daemon.requestLoop()
+            daemon.requestLoop()
+    except Pyro4.errors.NamingError:
+        print('Could not find Pyro nameserver, exiting.')
