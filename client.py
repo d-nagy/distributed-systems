@@ -89,9 +89,9 @@ def print_menu():
     print()
     [print(option) for option in menu_options]
     print()
-    print(f' {len(menu_options + 1)}. Exit')
+    print(f' {len(menu_options) + 1}. Exit')
     print()
-    print('Enter option: ')
+    print('Enter option: ', end='')
 
 
 def main():
@@ -101,7 +101,8 @@ def main():
         request = None
         response = None
 
-        choice = input(print_menu())
+        print_menu()
+        choice = input()
 
         if choice == '1':
             op = ROp.ADD_RATING.value
