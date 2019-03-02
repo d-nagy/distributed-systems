@@ -1,7 +1,7 @@
 class VectorClock:
     def __init__(self, size):
         self.size = size
-        self._clock = (0 for _ in range(size))
+        self._clock = tuple([0 for _ in range(size)])
 
     def __eq__(self, other):
         return self._clock == other.value()
