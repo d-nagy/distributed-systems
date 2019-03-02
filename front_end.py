@@ -22,6 +22,7 @@ class FrontEnd:
     def send_request(self, request):
         r_type = self._request_type(request)
         rm_status = self.rm.get_status()
+
         if rm_status == Status.OFFLINE:
             try:
                 self.rm = self._choose_replica()
@@ -31,12 +32,22 @@ class FrontEnd:
 
         if r_type == RType.UPDATE:
             rm_ts = self.rm.send_update(
-                request, self.ts.value(), str(uuid.uuid4()))
+                request,
+                self.ts.value(),
+                str(uuid.uuid4())
+            )
+
             self.ts.merge(VectorClock.fromiterable(rm_ts))
+
+            print('Timestamp: ', self.ts.value())
             return 'Update submitted!'
+
         elif r_type == RType.QUERY:
             val, rm_ts = self.rm.send_query(request, self.ts.value())
+
             self.ts.merge(VectorClock.fromiterable(rm_ts))
+
+            print('Timestamp: ', self.ts.value())
             return val
 
     def _choose_replica(self):
@@ -44,10 +55,12 @@ class FrontEnd:
 
         stat = {server: server.get_status() for server in self.servers}
         available = []
+        num_offline = list(stat.values()).count(Status.OFFLINE.value)
+        num_overloaded = list(stat.values()).count(Status.OVERLOADED.value)
 
-        if stat.values().count(Status.OFFLINE.value) == len(self.servers):
+        if num_offline == len(self.servers):
             raise Exception('All servers offline')
-        elif stat.values().count(Status.OVERLOADED.value) < len(self.servers):
+        elif num_overloaded < len(self.servers):
             available = [k for k in stat.keys()
                          if stat[k] == Status.ACTIVE.value]
         else:
