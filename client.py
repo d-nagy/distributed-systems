@@ -51,8 +51,8 @@ def get_rating():
             rating = float(rating)
             if not 0 <= rating <= 5:
                 print('- ' * 32)
-                print(f'Invalid movie rating [ {rating} ]". \
-                        Rating must be between 0 - 5.')
+                print(f'Invalid movie rating [ {rating} ]". ',
+                      'Rating must be between 0 - 5.')
                 print('- ' * 32)
                 rating = input('Enter movie rating (0 - 5): ')
                 continue
@@ -62,8 +62,8 @@ def get_rating():
             break
         except ValueError:
             print('- ' * 32)
-            print(f'Invalid movie rating [ {rating} ]". \
-                    Rating must be a number.')
+            print(f'Invalid movie rating [ {rating} ]". ',
+                  'Rating must be a number.')
             print('- ' * 32)
             rating = input('Enter movie rating (0 - 5): ')
             continue
@@ -75,8 +75,8 @@ def format_search_result(result, search_var, search_val):
     if result:
         n = len(result)
         titles = "\n".join([row['title'] for row in result])
-        response = f'Results for {search_var} "{search_val}" ({n} results):\n \
-                    {titles}'
+        response = (f'Results for {search_var} "{search_val}" ({n} results):\n'
+                    f'{titles}')
     else:
         response = f'No results for {search_var} "{search_val}"'
 
@@ -132,15 +132,16 @@ def main():
             request = (op, title)
             try:
                 result = frontend.send_request(request)
-                response = f'Overall average rating for {title}: {result}/5'
+                response = (f'Average rating for {title}: '
+                            f'{round(result, 1)}/5')
             except Exception as e:
                 response = e
 
         elif choice == '4':
             op = ROp.GET_RATINGS.value
             title = None
-            print('Choose a movie you want to see your rating of, \
-                   or leave it blank to view all of your ratings.')
+            print('Choose a movie you want to see your rating of, ',
+                  'or leave it blank to view all of your ratings.')
             title = get_title()
             request = (op, title)
             try:
@@ -150,10 +151,10 @@ def main():
                     if title:
                         response = f'Your rating of {title}:\n{result}'
                     else:
-                        response = f'Your ratings ({len(result)} results):\n \
-                                    {result}'
+                        response = (f'Your ratings ({len(result)} results):\n'
+                                    f'{result}')
                 else:
-                    response = f'You have submitted no ratings yet.'
+                    response = 'You have submitted no ratings yet.'
             except Exception as e:
                 response = e
 
@@ -212,8 +213,8 @@ def main():
 
         else:
             print('- ' * 32)
-            print(f'Invalid option [ {choice} ]. \
-                    Enter an option from 1 - {len(menu_options) + 1}.')
+            print(f'Invalid option [ {choice} ]. ',
+                  f'Enter an option from 1 - {len(menu_options) + 1}.')
             print('- ' * 32)
             continue
 
