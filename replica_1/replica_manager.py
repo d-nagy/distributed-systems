@@ -43,7 +43,7 @@ def get_avg_movie_rating(title):
         reader = csv.DictReader(csvfile)
 
         ratings = [float(row['rating']) for row in reader
-                   if int(row['movieId']) == movieId]
+                   if row['movieId'] == movieId]
 
     movie_rating = sum(ratings) / len(ratings)
     return movie_rating
@@ -60,7 +60,7 @@ def get_movie_ratings(userId=None, title=None):
         if title:
             movieId = get_movie_by_title(title)['movieId']
             ratings = [row for row in ratings
-                       if int(row['movieId']) == movieId]
+                       if row['movieId'] == movieId]
 
     ratings = [{'title': get_movie_by_id(int(r['movieId']))['title'],
                 'rating': r['rating']} for r in ratings]
@@ -111,7 +111,7 @@ def get_movie_tags(title):
         reader = csv.DictReader(csvfile)
 
         tags = list({row['tag'] for row in reader
-                     if int(row['movieId']) == movieId})
+                     if row['movieId'] == movieId})
 
     return tags
 
@@ -217,11 +217,18 @@ class ReplicaManager(threading.Thread):
         print('Query received: ', q_op, q_prev)
         response = None
 
-        q_prev = VectorClock.fromiterable(q_prev)
-        self.query_results[(q_op, q_prev)] = queue.Queue(maxsize=1)
-        self.pending_queries.put((q_op, q_prev))
-        response = self.query_results[(q_op, q_prev)].get()
-        del self.query_results[(q_op, q_prev)]
+        val = self._apply_query(q_op)
+        new = self.value_ts.value()
+
+        print('Timestamp: ', self.value_ts.value())
+
+        response = (val, new)
+
+        # q_prev = VectorClock.fromiterable(q_prev)
+        # self.query_results[(q_op, q_prev)] = queue.Queue(maxsize=1)
+        # self.pending_queries.put((q_op, q_prev))
+        # response = self.query_results[(q_op, q_prev)].get()
+        # del self.query_results[(q_op, q_prev)]
 
         return response
 
@@ -240,6 +247,11 @@ class ReplicaManager(threading.Thread):
             log_record = (self._id, ts, u_op, u_prev, u_id)
 
             self.update_log.append(log_record)
+
+            self._execute_update(u_op, u_id, ts)
+
+            print('Replica timestamp: ', self.replica_ts.value())
+            print('Value timestamp: ', self.value_ts.value())
 
             return ts.value()
 
@@ -310,7 +322,7 @@ class ReplicaManager(threading.Thread):
             ROp.GET_AVG_RATING.value: get_avg_movie_rating,
             ROp.GET_RATINGS.value: get_movie_ratings,
             ROp.GET_GENRES.value: get_movie_genres,
-            ROp.GET_MOVIE.value: get_movie,
+            ROp.GET_MOVIE.value: get_movie_by_title,
             ROp.GET_TAGS.value: get_movie_tags,
             ROp.SEARCH_TITLE.value: search_by_title,
             ROp.SEARCH_GENRE.value: search_by_genre,
@@ -340,12 +352,12 @@ if __name__ == '__main__':
     rm = ReplicaManager(ID, stopper)
     handler = SignalHandler(stopper, rm)
     signal.signal(signal.SIGINT, handler)
-    rm.start()
+    # rm.start()
 
     with Pyro4.Daemon() as daemon:
         uri = daemon.register(rm)
         with Pyro4.locateNS() as ns:
-            ns.register('network.replica.' + ID, uri)
+            ns.register(f'network.replica.{ID}', uri)
 
         print('Server ready.')
 
