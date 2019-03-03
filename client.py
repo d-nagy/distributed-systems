@@ -21,7 +21,7 @@ def get_user_id():
 
     while not uid.isdigit():
         print('- ' * 32)
-        print(f'Invalid user ID [ {uid} ]". User ID must be a number.')
+        print(f'Invalid user ID [ {uid} ]. User ID must be a number.')
         print('- ' * 32)
         uid = input('Enter a user ID (number): ')
 
@@ -50,10 +50,12 @@ def get_rating():
         try:
             rating = float(rating)
             if not 0 <= rating <= 5:
+                print()
                 print('- ' * 32)
-                print(f'Invalid movie rating [ {rating} ]". ',
+                print(f'Invalid movie rating [ {rating} ]. ',
                       'Rating must be between 0 - 5.')
                 print('- ' * 32)
+                print()
                 rating = input('Enter movie rating (0 - 5): ')
                 continue
             elif rating % 0.5 != 0:
@@ -61,10 +63,12 @@ def get_rating():
                 print('Your rating was rounded to the nearest 0.5.')
             break
         except ValueError:
+            print()
             print('- ' * 32)
             print(f'Invalid movie rating [ {rating} ]". ',
                   'Rating must be a number.')
             print('- ' * 32)
+            print()
             rating = input('Enter movie rating (0 - 5): ')
             continue
 
