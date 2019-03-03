@@ -2,6 +2,7 @@ import csv
 import os
 import queue
 import random
+import shutil
 import signal
 import threading
 import time
@@ -38,6 +39,7 @@ def submit_rating(userId, title, rating):
                     writer.writerow(new_row)
                 else:
                     writer.writerow(row)
+        shutil.move(tempfile.name, rating_file)
     else:
         with open(rating_file, 'a', newline='') as csvfile:
             writer = csv.DictWriter(csvfile, ratings_fields)
