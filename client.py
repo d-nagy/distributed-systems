@@ -143,16 +143,22 @@ def main():
             print('Choose a movie you want to see your rating of, ',
                   'or leave it blank to view all of your ratings.')
             title = get_title()
-            request = (op, title)
+            request = (op, userId, title)
             try:
                 result = frontend.send_request(request)
                 if result:
-                    result = "\n".join(result)
-                    if title:
-                        response = f'Your rating of {title}:\n{result}'
-                    else:
-                        response = (f'Your ratings ({len(result)} results):\n'
-                                    f'{result}')
+                    response = ' Title'.ljust(50, ' ') + '| Rating\n'
+                    response += '-' * 65 + '\n'
+                    for row in result:
+                        if len(row['title']) > 50:
+                            response += row['title'][:48] + '- | '
+                            response += row['rating'] + '\n -'
+                            response += row['title'][48:].ljust(48, ' ')
+                            response += '|\n'
+                        else:
+                            response += row['title'].ljust(50, ' ') + '| '
+                            response += row['rating'] + '\n'
+
                 else:
                     response = 'You have submitted no ratings yet.'
             except Exception as e:
@@ -197,7 +203,7 @@ def main():
             result = frontend.send_request(request)
             response = format_search_result(result, 'genre', genre)
 
-        elif choice == '8':
+        elif choice == '9':
             op = ROp.SEARCH_TAG.value
             tag = get_tag()
             request = (op, tag)
@@ -221,6 +227,7 @@ def main():
         print()
         print(response)
         print()
+        input('Press any key to continue.')
 
 
 if __name__ == '__main__':
