@@ -8,6 +8,7 @@ import time
 import Pyro4
 from sys import path
 
+REPLICA_NUM = 3
 
 movie_file = 'movies.csv'
 rating_file = 'ratings.csv'
@@ -170,46 +171,34 @@ class ReplicaManager(threading.Thread):
         self.status = Status.ACTIVE
 
         # Gossip Architecture State
-        self.value_ts = VectorClock(3)
-        self.replica_ts = VectorClock(3)
+        self.value_ts = VectorClock(REPLICA_NUM)
+        self.replica_ts = VectorClock(REPLICA_NUM)
         self.update_log = []
-        self.ts_table = [(0, 0, 0), (0, 0, 0)]
+        self.ts_table = [VectorClock(REPLICA_NUM) if i != self._id else None
+                         for i in range(REPLICA_NUM - 1)]
         self.executed = []
         self.pending_queries = queue.Queue()
         self.query_results = {}
+        self.interval = 5.0
+        self.other_replicas = []
+        try:
+            self.other_replicas = self._find_replicas()
+        except ValueError as e:
+            print(e)
 
         self.stopper = stopper
-        self.ts_lock = threading.Lock()
+        self.vts_lock = threading.Lock()
+        self.rts_lock = threading.Lock()
 
     def run(self):
         while not self.stopper.is_set():
-            updates = self.update_log
+            with self.rts_lock:
+                for r_id, rm in self.other_replicas:
+                    r_ts = self.ts_table[r_id]
+                    m_log = self._get_recent_updates(r_ts)
+                    rm.send_gossip(m_log, self.replica_ts.value(), self._id)
 
-            # Apply stable updates
-            for update in updates:
-                _id, ts, u_op, u_prev, u_id = update
-
-                self.ts_lock.acquire()
-                stable = u_prev <= self.value_ts
-                self.ts_lock.release()
-
-                if stable:
-                    self._execute_update(u_op, u_id, ts)
-
-            # Try to apply next pending query
-            try:
-                q_op, q_prev = self.pending_queries.get(block=False)
-
-                self.ts_lock.acquire()
-
-                if q_prev <= self.value_ts:
-                    val = self._apply_query(q_op)
-                    new = self.value_ts.value()
-                    self.query_results[(q_op, q_prev)].put((val, new))
-
-                self.ts_lock.release()
-            except queue.Empty:
-                pass
+            self.stopper.wait(5)
 
         print('Stopper set.')
 
@@ -217,18 +206,22 @@ class ReplicaManager(threading.Thread):
         print('Query received: ', q_op, q_prev)
         response = None
 
-        val = self._apply_query(q_op)
-        new = self.value_ts.value()
+        q_prev = VectorClock.fromiterable(q_prev)
+
+        self.vts_lock.acquire
+        if q_prev <= self.value_ts:
+            val = self._apply_query(q_op)
+            new = self.value_ts.value()
+            response = (val, new)
+            self.vts_lock.release()
+        else:
+            self.vts_lock.release()
+            self.query_results[(q_op, q_prev)] = queue.Queue(maxsize=1)
+            self.pending_queries.put((q_op, q_prev))
+            response = self.query_results[(q_op, q_prev)].get()
+            del self.query_results[(q_op, q_prev)]
 
         print('Timestamp: ', self.value_ts.value())
-
-        response = (val, new)
-
-        # q_prev = VectorClock.fromiterable(q_prev)
-        # self.query_results[(q_op, q_prev)] = queue.Queue(maxsize=1)
-        # self.pending_queries.put((q_op, q_prev))
-        # response = self.query_results[(q_op, q_prev)].get()
-        # del self.query_results[(q_op, q_prev)]
 
         return response
 
@@ -237,10 +230,11 @@ class ReplicaManager(threading.Thread):
         ts = None
 
         if u_id not in self.executed:
-            self.replica_ts.increment(self._id)
+            with self.rts_lock:
+                self.replica_ts.increment(self._id)
+                ts = list(u_prev[:])
+                ts[self._id] = self.replica_ts.value()[self._id]
 
-            ts = list(u_prev[:])
-            ts[self._id] = self.replica_ts.value()[self._id]
             ts = VectorClock.fromiterable(ts)
 
             u_prev = VectorClock.fromiterable(u_prev)
@@ -248,7 +242,9 @@ class ReplicaManager(threading.Thread):
 
             self.update_log.append(log_record)
 
-            self._execute_update(u_op, u_id, ts)
+            with self.vts_lock:
+                if u_prev <= self.value_ts:
+                    self._execute_update(u_op, u_id, ts)
 
             print('Replica timestamp: ', self.replica_ts.value())
             print('Value timestamp: ', self.value_ts.value())
@@ -256,6 +252,35 @@ class ReplicaManager(threading.Thread):
             return ts.value()
 
         return ts
+
+    @Pyro4.oneway
+    def send_gossip(self, m_log, m_ts, r_id):
+        self._merge_update_log(m_log)
+
+        m_ts = VectorClock.fromiterable(m_ts)
+        with self.rts_lock:
+            self.replica_ts.merge(m_ts)
+
+        stable = self._get_stable_updates()
+        for update in stable:
+            _id, ts, u_op, u_prev, u_id = update
+            with self.vts_lock:
+                self._execute_update(u_op, u_id, ts)
+
+        self.ts_table[r_id] = m_ts
+
+        while True:
+            try:
+                q_op, q_prev = self.pending_queries.get(block=False)
+
+                with self.vts_lock:
+                    if q_prev <= self.value_ts:
+                        val = self._apply_query(q_op)
+                        new = self.value_ts.value()
+                        self.query_results[(q_op, q_prev)].put((val, new))
+
+            except queue.Empty:
+                break
 
     def get_status(self):
         return self.status.value
@@ -293,28 +318,29 @@ class ReplicaManager(threading.Thread):
             return
 
         self._apply_update(u_op)
-
-        self.ts_lock.acquire()
         self.value_ts.merge(ts)
-        self.ts_lock.release()
-
         self.executed.append(u_id)
 
     def _merge_update_log(self, m_log):
         for record in m_log:
             _id, ts, u_op, u_prev, u_id = record
-            if not ts <= self.replica_ts:
-                self.update_log.append(record)
+            with self.rts_lock:
+                if not ts <= self.replica_ts:
+                    self.update_log.append(record)
 
     def _get_stable_updates(self):
-        self.ts_lock.acquire()
-        stable = [record for record in self.update_log
-                  if record[3] <= self.value_ts]
-        self.ts_lock.release()
+        stable = []
+
+        with self.vts_lock:
+            stable = [record for record in self.update_log
+                      if record[3] <= self.value_ts]
 
         stable.sort(key=lambda r: r[3])
 
         return stable
+
+    def _get_recent_updates(self, r_ts):
+        pass
 
     @staticmethod
     def _parse_q_op(op):
@@ -336,6 +362,21 @@ class ReplicaManager(threading.Thread):
             ROp.ADD_TAG.value: submit_tag
         }[op]
 
+    @staticmethod
+    def _find_replicas():
+        servers = []
+        with Pyro4.locateNS() as ns:
+            for server, uri in ns.list(prefix="network.replica.").items():
+                print("found replica", server)
+                server_id = int(server.split('.')[-1])
+                servers.append((server_id, Pyro4.Proxy(uri)))
+        if not servers:
+            raise ValueError(
+                "No servers found! (are the movie servers running?)"
+            )
+        servers.sort()
+        return servers[:REPLICA_NUM]
+
 
 if __name__ == '__main__':
     ID = 0
@@ -352,7 +393,7 @@ if __name__ == '__main__':
     rm = ReplicaManager(ID, stopper)
     handler = SignalHandler(stopper, rm)
     signal.signal(signal.SIGINT, handler)
-    # rm.start()
+    rm.start()
 
     try:
         with Pyro4.Daemon() as daemon:
