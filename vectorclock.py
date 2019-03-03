@@ -24,7 +24,7 @@ class VectorClock:
     def increment(self, index):
         new = list(self._clock)
         new[index] += 1
-        self._clock = tuple(self._clock)
+        self._clock = tuple(new)
 
     def merge(self, other):
         if self.size == other.size:
