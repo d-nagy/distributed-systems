@@ -23,14 +23,17 @@ class FrontEnd:
 
     def send_request(self, request):
         r_type = self._request_type(request)
-        rm_status = self.rm.get_status()
 
-        if rm_status == Status.OFFLINE:
-            try:
+        try:
+            if self.rm is not None:
+                rm_status = self.rm.get_status()
+                if rm_status == Status.OFFLINE:
+                    self.rm = self._choose_replica()
+            else:
                 self.rm = self._choose_replica()
-            except ValueError as e:
-                print(e)
-                return e.args[0]
+        except ValueError as e:
+            print(e)
+            return e.args[0]
 
         if r_type == RType.UPDATE:
             rm_ts = self.rm.send_update(
@@ -94,7 +97,7 @@ class FrontEnd:
             raise ValueError(
                 "No servers found! (are the movie servers running?)"
             )
-        return servers[:3]
+        return servers[:REPLICA_NUM]
 
 
 if __name__ == '__main__':
