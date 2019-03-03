@@ -7,6 +7,7 @@ import threading
 import time
 import Pyro4
 from sys import path
+from tempfile import NamedTemporaryFile
 
 REPLICA_NUM = 3
 
@@ -21,11 +22,28 @@ tags_fields = ['userId', 'movieId', 'tag', 'timestamp']
 
 def submit_rating(userId, title, rating):
     movieId = get_movie_by_title(title)['movieId']
-    with open(rating_file, 'a', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, ratings_fields)
+    existing_rating = get_movie_ratings(userId, None, movieId)
 
-        writer.writerow({'userId': userId, 'movieId': movieId,
-                         'rating': rating, 'timestamp': str(int(time.time()))})
+    if existing_rating:
+        tempfile = NamedTemporaryFile(mode='w', delete=False)
+        with open(rating_file, 'r', newline='') as csvfile, tempfile:
+            reader = csv.DictReader(csvfile)
+            writer = csv.DictWriter(tempfile, ratings_fields)
+
+            for row in reader:
+                if (row['movieId'] == existing_rating['movieId'] and
+                        row['userId'] == existing_rating['userId']):
+                    new_row = row
+                    new_row['rating'] = rating
+                    writer.writerow(new_row)
+                else:
+                    writer.writerow(row)
+    else:
+        with open(rating_file, 'a', newline='') as csvfile:
+            writer = csv.DictWriter(csvfile, ratings_fields)
+            timestamp = str(int(time.time()))
+            writer.writerow({'userId': userId, 'movieId': movieId,
+                             'rating': rating, 'timestamp': timestamp})
 
 
 def submit_tag(userId, title, tag):
@@ -50,7 +68,7 @@ def get_avg_movie_rating(title):
     return movie_rating
 
 
-def get_movie_ratings(userId=None, title=None):
+def get_movie_ratings(userId=None, title=None, movieId=None):
     ratings = []
     with open(rating_file, newline='') as csvfile:
         reader = csv.DictReader(csvfile)
@@ -58,7 +76,10 @@ def get_movie_ratings(userId=None, title=None):
         if userId:
             ratings = [row for row in ratings
                        if int(row['userId']) == userId]
-        if title:
+        if movieId:
+            ratings = [row for row in ratings
+                       if row['movieId'] == movieId]
+        elif title:
             movieId = get_movie_by_title(title)['movieId']
             ratings = [row for row in ratings
                        if row['movieId'] == movieId]
