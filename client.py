@@ -103,6 +103,7 @@ def main():
 
         print_menu()
         choice = input()
+        print()
 
         if choice == '1':
             op = ROp.ADD_RATING.value
@@ -140,7 +141,7 @@ def main():
         elif choice == '4':
             op = ROp.GET_RATINGS.value
             title = None
-            print('Choose a movie you want to see your rating of, ',
+            print('Choose a movie you want to see your rating of,',
                   'or leave it blank to view all of your ratings.')
             title = get_title()
             request = (op, userId, title)
@@ -227,7 +228,7 @@ def main():
         print()
         print(response)
         print()
-        input('Press any key to continue.')
+        input('Press ENTER to continue.')
 
 
 if __name__ == '__main__':
