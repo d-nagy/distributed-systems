@@ -239,7 +239,7 @@ class ReplicaManager(threading.Thread):
         if u_id not in self.executed:
             self.replica_ts.increment(self._id)
 
-            ts = u_prev[:]
+            ts = list(u_prev[:])
             ts[self._id] = self.replica_ts.value()[self._id]
             ts = VectorClock.fromiterable(ts)
 
@@ -338,7 +338,7 @@ class ReplicaManager(threading.Thread):
 
 
 if __name__ == '__main__':
-    ID = 1
+    ID = 0
 
     path.append(os.path.dirname(path[0]))
     this_dir = os.path.abspath(__file__)
@@ -354,11 +354,14 @@ if __name__ == '__main__':
     signal.signal(signal.SIGINT, handler)
     # rm.start()
 
-    with Pyro4.Daemon() as daemon:
-        uri = daemon.register(rm)
-        with Pyro4.locateNS() as ns:
-            ns.register(f'network.replica.{ID}', uri)
+    try:
+        with Pyro4.Daemon() as daemon:
+            uri = daemon.register(rm)
+            with Pyro4.locateNS() as ns:
+                ns.register(f'network.replica.{ID}', uri)
 
-        print('Server ready.')
+            print('Server ready.')
 
-        daemon.requestLoop(loopCondition=lambda: not stopper.is_set())
+            daemon.requestLoop(loopCondition=lambda: not stopper.is_set())
+    except Pyro4.errors.NamingError:
+        print('Could not find Pyro nameserver, exiting.')
