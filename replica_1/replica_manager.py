@@ -192,12 +192,16 @@ class ReplicaManager(threading.Thread):
 
     def run(self):
         while not self.stopper.is_set():
-            with self.rts_lock:
-                for r_id, rm in self.other_replicas:
-                    r_ts = self.ts_table[r_id]
-                    m_log = self._get_recent_updates(r_ts)
-                    rm.send_gossip(m_log, self.replica_ts.value(), self._id)
+            if self.status != Status.OFFLINE.value:
+                with self.rts_lock:
+                    for r_id, rm in self.other_replicas:
+                        r_ts = self.ts_table[r_id]
+                        m_log = self._get_recent_updates(r_ts)
+                        rm.send_gossip(m_log,
+                                       self.replica_ts.value(),
+                                       self._id)
 
+            self._update_status()
             self.stopper.wait(5)
 
         print('Stopper set.')
@@ -255,6 +259,11 @@ class ReplicaManager(threading.Thread):
 
     @Pyro4.oneway
     def send_gossip(self, m_log, m_ts, r_id):
+        print('Gossip received.')
+        print(r_id)
+        print(m_ts)
+        print(m_log)
+        print()
         self._merge_update_log(m_log)
 
         m_ts = VectorClock.fromiterable(m_ts)
@@ -340,7 +349,7 @@ class ReplicaManager(threading.Thread):
         return stable
 
     def _get_recent_updates(self, r_ts):
-        pass
+        return [record for record in self.update_log if record[3] > r_ts]
 
     @staticmethod
     def _parse_q_op(op):
