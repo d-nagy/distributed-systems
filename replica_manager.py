@@ -7,8 +7,12 @@ import signal
 import threading
 import time
 import Pyro4
-from sys import path
+from sys import path, argv
 from tempfile import NamedTemporaryFile
+from signalhandler import SignalHandler
+from vectorclock import VectorClock
+from enums import Status, ROp
+
 
 REPLICA_NUM = 3
 
@@ -183,7 +187,7 @@ def search_by_tag(tag):
 
 @Pyro4.expose
 class ReplicaManager(threading.Thread):
-    def __init__(self, replica_id, stopper):
+    def __init__(self, replica_id, stopper, status=None):
         super().__init__()
 
         self._id = replica_id
@@ -191,7 +195,10 @@ class ReplicaManager(threading.Thread):
         # Replica status properties
         self.failure_prob = 0.05
         self.overload_prob = 0.2
-        self.status = Status.ACTIVE
+        if status not in [n.value for n in list(Status)]:
+            self.status = Status.ACTIVE
+        else:
+            self.status = status
 
         # Gossip Architecture State
         self.value_ts = VectorClock(REPLICA_NUM)
@@ -267,6 +274,7 @@ class ReplicaManager(threading.Thread):
 
             u_prev = VectorClock.fromiterable(u_prev)
             log_record = (self._id, ts, u_op, u_prev, u_id)
+            print('Update record: ' + log_record)
 
             self.update_log.append(log_record)
 
@@ -411,28 +419,43 @@ class ReplicaManager(threading.Thread):
 
 
 if __name__ == '__main__':
-    ID = 0
+    ID = None
+    STATUS = None
+    REPLICADIR = None
 
-    path.append(os.path.dirname(path[0]))
+    if len(argv) < 2:
+        print('No server ID provided, exiting.')
+
+    try:
+        ID = int(argv[1])
+        REPLICADIR = f'replica_{ID}/'
+        STATUS = argv[2]
+        print(ID)
+    except ValueError:
+        print('Invalid server ID provided, exiting.')
+    except IndexError:
+        pass
+
     this_dir = os.path.abspath(__file__)
-    os.chdir(os.path.dirname(this_dir))
+    os.chdir(f'{os.path.dirname(this_dir)}/{REPLICADIR}')
+    path.append(os.path.dirname(path[0]))
 
     from signalhandler import SignalHandler
     from vectorclock import VectorClock
     from enums import Status, ROp
 
-    stopper = threading.Event()
-    rm = ReplicaManager(ID, stopper)
-    handler = SignalHandler(stopper, rm)
-    signal.signal(signal.SIGINT, handler)
-    rm.start()
-
-    if not rm.isAlive():
-        print('Gossip thread failed to start!')
-    else:
-        print('Gossip thread started.')
-
     try:
+        stopper = threading.Event()
+        rm = ReplicaManager(ID, stopper, STATUS)
+        handler = SignalHandler(stopper, rm)
+        signal.signal(signal.SIGINT, handler)
+        rm.start()
+
+        if not rm.isAlive():
+            print('Gossip thread failed to start!')
+        else:
+            print('Gossip thread started.')
+
         with Pyro4.Daemon() as daemon:
             uri = daemon.register(rm)
             with Pyro4.locateNS() as ns:
