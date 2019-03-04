@@ -12,7 +12,10 @@ class SignalHandler:
     def __call__(self, signum, frame):
         print('Handler called.')
         self.stopper.set()
-        self.worker.join()
+        try:
+            self.worker.join()
+        except RuntimeError:
+            pass
 
         print('Exiting.')
 
