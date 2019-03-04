@@ -9,9 +9,9 @@ import time
 import Pyro4
 from sys import path, argv
 from tempfile import NamedTemporaryFile
-from signalhandler import SignalHandler
-from vectorclock import VectorClock
-from enums import Status, ROp
+# from signalhandler import SignalHandler
+# from vectorclock import VectorClock
+# from enums import Status, ROp
 
 
 REPLICA_NUM = 3
