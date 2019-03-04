@@ -223,11 +223,12 @@ class ReplicaManager(threading.Thread):
                         rm.send_gossip(m_log,
                                        self.replica_ts.value(),
                                        self._id)
+                        print(f'Gossip sent to RM {r_id}\n')
 
             self._update_status()
             self.stopper.wait(5)
 
-        print('Stopper set.')
+        print('Stopper set, gossip thread stopping.')
 
     def send_query(self, q_op, q_prev):
         print('Query received: ', q_op, q_prev)
@@ -282,8 +283,7 @@ class ReplicaManager(threading.Thread):
 
     @Pyro4.oneway
     def send_gossip(self, m_log, m_ts, r_id):
-        print('Gossip received.')
-        print(r_id)
+        print(f'Gossip received from RM {r_id}')
         print(m_ts)
         print(m_log)
         print()
@@ -374,6 +374,21 @@ class ReplicaManager(threading.Thread):
     def _get_recent_updates(self, r_ts):
         return [record for record in self.update_log if record[3] > r_ts]
 
+    def _find_replicas(self):
+        servers = []
+        with Pyro4.locateNS() as ns:
+            for server, uri in ns.list(prefix="network.replica.").items():
+                server_id = int(server.split('.')[-1])
+                if server_id != self._id:
+                    print("found replica", server)
+                    servers.append((server_id, Pyro4.Proxy(uri)))
+        if not servers:
+            raise ValueError(
+                "No other servers found."
+            )
+        servers.sort()
+        return servers[:REPLICA_NUM]
+
     @staticmethod
     def _parse_q_op(op):
         return {
@@ -394,21 +409,6 @@ class ReplicaManager(threading.Thread):
             ROp.ADD_TAG.value: submit_tag
         }[op]
 
-    def _find_replicas(self):
-        servers = []
-        with Pyro4.locateNS() as ns:
-            for server, uri in ns.list(prefix="network.replica.").items():
-                server_id = int(server.split('.')[-1])
-                if server_id != self._id:
-                    print("found replica", server)
-                    servers.append((server_id, Pyro4.Proxy(uri)))
-        if not servers:
-            raise ValueError(
-                "No other servers found."
-            )
-        servers.sort()
-        return servers[:REPLICA_NUM]
-
 
 if __name__ == '__main__':
     ID = 0
@@ -426,6 +426,11 @@ if __name__ == '__main__':
     handler = SignalHandler(stopper, rm)
     signal.signal(signal.SIGINT, handler)
     rm.start()
+
+    if not rm.isAlive():
+        print('Gossip thread failed to start!')
+    else:
+        print('Gossip thread started.')
 
     try:
         with Pyro4.Daemon() as daemon:
