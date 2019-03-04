@@ -420,6 +420,7 @@ class ReplicaManager(threading.Thread):
 
 if __name__ == '__main__':
     ID = None
+    NAME = None
     STATUS = None
     REPLICADIR = None
 
@@ -428,6 +429,7 @@ if __name__ == '__main__':
 
     try:
         ID = int(argv[1])
+        NAME = f'network.replica.{ID}'
         REPLICADIR = f'replica_{ID}/'
         STATUS = argv[2]
         print(ID)
@@ -446,8 +448,9 @@ if __name__ == '__main__':
 
     try:
         stopper = threading.Event()
+        daemon = Pyro4.Daemon()
         rm = ReplicaManager(ID, stopper, STATUS)
-        handler = SignalHandler(stopper, rm)
+        handler = SignalHandler(stopper=stopper, rm=rm, daemon=daemon)
         signal.signal(signal.SIGINT, handler)
         rm.start()
 
@@ -456,13 +459,19 @@ if __name__ == '__main__':
         else:
             print('Gossip thread started.')
 
-        with Pyro4.Daemon() as daemon:
-            uri = daemon.register(rm)
-            with Pyro4.locateNS() as ns:
-                ns.register(f'network.replica.{ID}', uri)
+        uri = daemon.register(rm)
+        with Pyro4.locateNS() as ns:
+            ns.register(NAME, uri)
 
-            print('Server ready.')
+        print('Server ready.')
 
-            daemon.requestLoop(loopCondition=lambda: not stopper.is_set())
+        daemon.requestLoop()
+
+        with Pyro4.locateNS() as ns:
+            ns.remove(NAME)
+
+        daemon.close()
+
+        print('Exiting.')
     except Pyro4.errors.NamingError:
         print('Could not find Pyro nameserver, exiting.')

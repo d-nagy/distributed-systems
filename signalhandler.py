@@ -3,20 +3,27 @@ import sys
 
 class SignalHandler:
     stopper = None
-    worker = None
+    rm = None
+    daemon = None
 
-    def __init__(self, stopper, worker):
+    def __init__(self, stopper=None, rm=None, daemon=None):
         self.stopper = stopper
-        self.worker = worker
+        self.rm = rm
+        self.daemon = daemon
 
     def __call__(self, signum, frame):
         print('Handler called.')
-        self.stopper.set()
-        try:
-            self.worker.join()
-        except RuntimeError:
-            pass
+        if self.stopper is not None:
+            self.stopper.set()
 
-        print('Exiting.')
+        if self.rm is not None:
+            try:
+                self.rm.join()
+                print('RM stopped.')
+            except RuntimeError:
+                pass
 
-        sys.exit(0)
+        if self.daemon is not None:
+            print('Shutting down daemon...')
+            self.daemon.shutdown()
+            print('Daemon stopped.')

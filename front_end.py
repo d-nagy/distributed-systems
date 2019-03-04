@@ -1,9 +1,11 @@
 import Pyro4
 import random
+import signal
 import uuid
 from enum import Enum
 from vectorclock import VectorClock
 from enums import Status, RType
+from signalhandler import SignalHandler
 
 REPLICA_NUM = 3
 
@@ -101,16 +103,28 @@ class FrontEnd:
 
 
 if __name__ == '__main__':
+    NAME = 'network.frontend'
+
     try:
         fe = FrontEnd()
 
-        with Pyro4.Daemon() as daemon:
-            uri = daemon.register(fe)
-            with Pyro4.locateNS() as ns:
-                ns.register('network.frontend', uri)
+        daemon = Pyro4.Daemon()
+        handler = SignalHandler(daemon=daemon)
+        signal.signal(signal.SIGINT, handler)
 
-            print('Front end ready.')
+        uri = daemon.register(fe)
+        with Pyro4.locateNS() as ns:
+            ns.register(NAME, uri)
 
-            daemon.requestLoop()
+        print('Front end ready.')
+
+        daemon.requestLoop()
+
+        with Pyro4.locateNS() as ns:
+            ns.remove(NAME)
+
+        daemon.close()
+
+        print('Exiting.')
     except Pyro4.errors.NamingError:
         print('Could not find Pyro nameserver, exiting.')
