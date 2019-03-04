@@ -446,9 +446,10 @@ if __name__ == '__main__':
     from vectorclock import VectorClock
     from enums import Status, ROp
 
+    stopper = threading.Event()
+    daemon = Pyro4.Daemon()
+
     try:
-        stopper = threading.Event()
-        daemon = Pyro4.Daemon()
         rm = ReplicaManager(ID, stopper, STATUS)
         handler = SignalHandler(stopper=stopper, rm=rm, daemon=daemon)
         signal.signal(signal.SIGINT, handler)
@@ -470,8 +471,8 @@ if __name__ == '__main__':
         with Pyro4.locateNS() as ns:
             ns.remove(NAME)
 
-        daemon.close()
-
         print('Exiting.')
     except Pyro4.errors.NamingError:
         print('Could not find Pyro nameserver, exiting.')
+    finally:
+        daemon.close()

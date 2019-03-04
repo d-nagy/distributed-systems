@@ -105,10 +105,10 @@ class FrontEnd:
 if __name__ == '__main__':
     NAME = 'network.frontend'
 
+    daemon = Pyro4.Daemon()
+
     try:
         fe = FrontEnd()
-
-        daemon = Pyro4.Daemon()
         handler = SignalHandler(daemon=daemon)
         signal.signal(signal.SIGINT, handler)
 
@@ -123,8 +123,8 @@ if __name__ == '__main__':
         with Pyro4.locateNS() as ns:
             ns.remove(NAME)
 
-        daemon.close()
-
         print('Exiting.')
     except Pyro4.errors.NamingError:
         print('Could not find Pyro nameserver, exiting.')
+    finally:
+        daemon.close()
