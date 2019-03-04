@@ -426,6 +426,7 @@ if __name__ == '__main__':
 
     if len(argv) < 2:
         print('No server ID provided, exiting.')
+        exit()
 
     try:
         ID = int(argv[1])
@@ -435,6 +436,7 @@ if __name__ == '__main__':
         print(ID)
     except ValueError:
         print('Invalid server ID provided, exiting.')
+        exit()
     except IndexError:
         pass
 
