@@ -1,6 +1,3 @@
-import sys
-
-
 class SignalHandler:
     stopper = None
     rm = None
