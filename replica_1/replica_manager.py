@@ -30,10 +30,10 @@ def submit_rating(userId, title, rating):
         with open(rating_file, 'r', newline='') as csvfile, tempfile:
             reader = csv.DictReader(csvfile)
             writer = csv.DictWriter(tempfile, ratings_fields)
-
+            writer.writeheader()
             for row in reader:
-                if (row['movieId'] == existing_rating['movieId'] and
-                        row['userId'] == existing_rating['userId']):
+                if (row['movieId'] == existing_rating[0]['movieId'] and
+                        row['userId'] == existing_rating[0]['userId']):
                     new_row = row
                     new_row['rating'] = rating
                     writer.writerow(new_row)
@@ -86,8 +86,8 @@ def get_movie_ratings(userId=None, title=None, movieId=None):
             ratings = [row for row in ratings
                        if row['movieId'] == movieId]
 
-    ratings = [{'title': get_movie_by_id(int(r['movieId']))['title'],
-                'rating': r['rating']} for r in ratings]
+    for r in ratings:
+        r['title'] = get_movie_by_id(int(r['movieId']))['title']
 
     return ratings
 
@@ -235,7 +235,7 @@ class ReplicaManager(threading.Thread):
 
         q_prev = VectorClock.fromiterable(q_prev)
 
-        self.vts_lock.acquire
+        self.vts_lock.acquire()
         if q_prev <= self.value_ts:
             val = self._apply_query(q_op)
             new = self.value_ts.value()
@@ -394,17 +394,17 @@ class ReplicaManager(threading.Thread):
             ROp.ADD_TAG.value: submit_tag
         }[op]
 
-    @staticmethod
-    def _find_replicas():
+    def _find_replicas(self):
         servers = []
         with Pyro4.locateNS() as ns:
             for server, uri in ns.list(prefix="network.replica.").items():
-                print("found replica", server)
                 server_id = int(server.split('.')[-1])
-                servers.append((server_id, Pyro4.Proxy(uri)))
+                if server_id != self._id:
+                    print("found replica", server)
+                    servers.append((server_id, Pyro4.Proxy(uri)))
         if not servers:
             raise ValueError(
-                "No servers found! (are the movie servers running?)"
+                "No other servers found."
             )
         servers.sort()
         return servers[:REPLICA_NUM]
