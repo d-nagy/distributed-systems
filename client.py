@@ -122,7 +122,7 @@ class Client:
         print('Enter option: ', end='')
 
     def main(self):
-        userId = self.get_user_id()
+        userId = get_user_id()
 
         while True:
             request = None
@@ -224,7 +224,7 @@ class Client:
                 if error:
                     response = result
                 else:
-                    response = self.format_search_result(
+                    response = format_search_result(
                         result, 'title', title)
 
             elif choice == '8':
@@ -235,7 +235,7 @@ class Client:
                 if error:
                     response = result
                 else:
-                    response = self.format_search_result(
+                    response = format_search_result(
                         result, 'genre', genre)
 
             elif choice == '9':
@@ -246,7 +246,7 @@ class Client:
                 if error:
                     response = result
                 else:
-                    response = self.format_search_result(result, 'tag', tag)
+                    response = format_search_result(result, 'tag', tag)
 
             elif choice == '10':
                 print('Bye!')
