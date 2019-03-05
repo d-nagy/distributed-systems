@@ -21,6 +21,6 @@ class SignalHandler:
                 pass
 
         if self.daemon is not None:
-            print('Shutting down daemon...')
+            print('Shutting down daemon ...')
             self.daemon.shutdown()
             print('Daemon stopped.')
