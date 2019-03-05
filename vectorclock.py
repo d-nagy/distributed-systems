@@ -21,6 +21,12 @@ class VectorClock:
     def __ge__(self, other):
         return not self.__lt__(other)
 
+    def __str__(self):
+        return str(self._clock)
+
+    def __repr__(self):
+        return str(self._clock)
+
     def increment(self, index):
         new = list(self._clock)
         new[index] += 1
