@@ -6,6 +6,7 @@ from enum import Enum
 from vectorclock import VectorClock
 from enums import Status, RType
 from signalhandler import SignalHandler
+from sys import platform
 
 REPLICA_NUM = 3
 
@@ -27,8 +28,11 @@ class FrontEnd:
         r_type = self._request_type(request)
 
         if self.rm is not None:
-            rm_status = self.rm.get_status()
-            if rm_status == Status.OFFLINE:
+            try:
+                rm_status = self.rm.get_status()
+                if rm_status == Status.OFFLINE:
+                    self.rm = self._choose_replica()
+            except Pyro4.errors.ConnectionClosedError:
                 self.rm = self._choose_replica()
         else:
             self.rm = self._choose_replica()
@@ -54,6 +58,9 @@ class FrontEnd:
             return val
 
     def _choose_replica(self):
+        for server in self.servers:
+            server._pyroRelease()
+
         self.servers = self._find_replicas()
 
         stat = {server: server.get_status() for server in self.servers}
@@ -106,7 +113,10 @@ if __name__ == '__main__':
     try:
         fe = FrontEnd()
         handler = SignalHandler(daemon=daemon)
-        signal.signal(signal.SIGINT, handler)
+        if platform != 'win32':
+            signal.signal(signal.SIGINT, handler)
+        else:
+            signal.signal(signal.CTRL_C_EVENT, handler)
 
         uri = daemon.register(fe)
         with Pyro4.locateNS() as ns:
