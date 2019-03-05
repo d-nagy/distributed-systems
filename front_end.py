@@ -26,16 +26,12 @@ class FrontEnd:
     def send_request(self, request):
         r_type = self._request_type(request)
 
-        try:
-            if self.rm is not None:
-                rm_status = self.rm.get_status()
-                if rm_status == Status.OFFLINE:
-                    self.rm = self._choose_replica()
-            else:
+        if self.rm is not None:
+            rm_status = self.rm.get_status()
+            if rm_status == Status.OFFLINE:
                 self.rm = self._choose_replica()
-        except ValueError as e:
-            print(e)
-            return e.args[0]
+        else:
+            self.rm = self._choose_replica()
 
         if r_type == RType.UPDATE:
             rm_ts = self.rm.send_update(

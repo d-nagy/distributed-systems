@@ -9,9 +9,6 @@ import time
 import Pyro4
 from sys import path, argv
 from tempfile import NamedTemporaryFile
-# from signalhandler import SignalHandler
-# from vectorclock import VectorClock
-# from enums import Status, ROp
 
 
 REPLICA_NUM = 3
@@ -193,9 +190,10 @@ class ReplicaManager(threading.Thread):
         self._id = replica_id
 
         # Replica status properties
-        self.failure_prob = 0.05
-        self.overload_prob = 0.2
+        self.failure_prob = 0.025
+        self.overload_prob = 0.1
         if status not in [n.value for n in list(Status)]:
+            print('Invalid status provided, defaulting to active.')
             self.status = Status.ACTIVE
         else:
             self.status = status
@@ -205,16 +203,12 @@ class ReplicaManager(threading.Thread):
         self.replica_ts = VectorClock(REPLICA_NUM)
         self.update_log = []
         self.ts_table = [VectorClock(REPLICA_NUM) if i != self._id else None
-                         for i in range(REPLICA_NUM - 1)]
+                         for i in range(REPLICA_NUM)]
         self.executed = []
         self.pending_queries = queue.Queue()
         self.query_results = {}
         self.interval = 5.0
-        self.other_replicas = []
-        try:
-            self.other_replicas = self._find_replicas()
-        except ValueError as e:
-            print(e)
+        self.other_replicas = self._find_replicas()
 
         self.stopper = stopper
         self.vts_lock = threading.Lock()
@@ -222,17 +216,30 @@ class ReplicaManager(threading.Thread):
 
     def run(self):
         while not self.stopper.is_set():
-            if self.status != Status.OFFLINE.value:
+            if self.status != Status.OFFLINE.value and self.update_log:
+                self.other_replicas = self._find_replicas()
                 with self.rts_lock:
                     for r_id, rm in self.other_replicas:
                         r_ts = self.ts_table[r_id]
                         m_log = self._get_recent_updates(r_ts)
-                        rm.send_gossip(m_log,
-                                       self.replica_ts.value(),
-                                       self._id)
-                        print(f'Gossip sent to RM {r_id}\n')
+
+                        print(f'\nCreating gossip for RM {r_id}')
+                        print(f'RM {r_id} Timestamp: {r_ts.value()}')
+                        print('Updates to send: ', m_log)
+
+                        if m_log:
+                            try:
+                                rm.send_gossip(m_log,
+                                               self.replica_ts.value(),
+                                               self._id)
+                                print(f'Gossip sent to RM {r_id}\n')
+                            except Pyro4.errors.CommunicationError as e:
+                                print(f'Failed to send gossip to RM {r_id}\n')
+                        else:
+                            print('No updates to gossip.')
 
             self._update_status()
+            print('Status: ', self.status.value, '\n')
             self.stopper.wait(5)
 
         print('Stopper set, gossip thread stopping.')
@@ -274,9 +281,8 @@ class ReplicaManager(threading.Thread):
 
             u_prev = VectorClock.fromiterable(u_prev)
             log_record = (self._id, ts, u_op, u_prev, u_id)
-            print('Update record: ' + log_record)
-
             self.update_log.append(log_record)
+            print('Update record: ', log_record)
 
             with self.vts_lock:
                 if u_prev <= self.value_ts:
@@ -291,7 +297,7 @@ class ReplicaManager(threading.Thread):
 
     @Pyro4.oneway
     def send_gossip(self, m_log, m_ts, r_id):
-        print(f'Gossip received from RM {r_id}')
+        print(f'\nGossip received from RM {r_id}')
         print(m_ts)
         print(m_log)
         print()
@@ -337,7 +343,7 @@ class ReplicaManager(threading.Thread):
             self.status = Status.ACTIVE
 
     def _apply_query(self, q_op):
-        print('Query applied.')
+        print('Query applied. ', q_op)
         val = None
 
         op, *params = q_op
@@ -347,7 +353,7 @@ class ReplicaManager(threading.Thread):
         return val
 
     def _apply_update(self, u_op):
-        print('Update applied.')
+        print('Update applied.', u_op)
 
         op, *params = u_op
         update = self._parse_u_op(op)
@@ -364,9 +370,12 @@ class ReplicaManager(threading.Thread):
     def _merge_update_log(self, m_log):
         for record in m_log:
             _id, ts, u_op, u_prev, u_id = record
+            ts = VectorClock.fromiterable(ts)
+            u_prev = VectorClock.fromiterable(u_prev)
             with self.rts_lock:
                 if not ts <= self.replica_ts:
-                    self.update_log.append(record)
+                    new_record = (_id, ts, u_op, u_prev, u_id)
+                    self.update_log.append(new_record)
 
     def _get_stable_updates(self):
         stable = []
@@ -380,7 +389,14 @@ class ReplicaManager(threading.Thread):
         return stable
 
     def _get_recent_updates(self, r_ts):
-        return [record for record in self.update_log if record[3] > r_ts]
+        recent = []
+        for record in self.update_log:
+            _id, ts, u_op, u_prev, u_id = record
+            if ts > r_ts:
+                new_record = (_id, ts.value(), u_op, u_prev.value(), u_id)
+                recent.append(new_record)
+
+        return recent
 
     def _find_replicas(self):
         servers = []
@@ -390,10 +406,6 @@ class ReplicaManager(threading.Thread):
                 if server_id != self._id:
                     print("found replica", server)
                     servers.append((server_id, Pyro4.Proxy(uri)))
-        if not servers:
-            raise ValueError(
-                "No other servers found."
-            )
         servers.sort()
         return servers[:REPLICA_NUM]
 
