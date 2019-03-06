@@ -442,12 +442,15 @@ class ReplicaManager(threading.Thread):
 
     def _find_replicas(self):
         servers = []
-        with Pyro4.locateNS() as ns:
-            for server, uri in ns.list(prefix="network.replica.").items():
-                server_id = int(server.split('.')[-1])
-                if server_id != self._id:
-                    # print("found replica", server)
-                    servers.append((server_id, Pyro4.Proxy(uri)))
+        try:
+            with Pyro4.locateNS() as ns:
+                for server, uri in ns.list(prefix="network.replica.").items():
+                    server_id = int(server.split('.')[-1])
+                    if server_id != self._id:
+                        # print("found replica", server)
+                        servers.append((server_id, Pyro4.Proxy(uri)))
+        except Pyro4.errors.NamingError:
+            print('Could not find Pyro nameserver.')
         servers.sort()
         return servers[:REPLICA_NUM]
 

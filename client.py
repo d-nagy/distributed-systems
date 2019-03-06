@@ -94,7 +94,10 @@ class Client:
         error = True
 
         if self.frontend is None:
-            self.frontend = self._find_frontend()
+            try:
+                self.frontend = self._find_frontend()
+            except Pyro4.errors.NamingError:
+                print('Could not find Pyro nameserver.')
 
         if self.frontend is not None:
             try:
