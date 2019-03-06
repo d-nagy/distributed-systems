@@ -111,6 +111,9 @@ def get_movie_by_title(title):
             else:
                 break
 
+    if not movie:
+        raise Exception(f'No movie found for title [ {title} ].')
+
     return dict(movie)
 
 
@@ -239,7 +242,7 @@ class ReplicaManager(threading.Thread):
                             print(f'Gossip sent to RM {r_id}\n')
                         except Pyro4.errors.CommunicationError as e:
                             print(f'Failed to send gossip to RM {r_id}\n')
-                    print('----------------------')
+                    print('----------------------\n')
 
             self._update_status()
             print('Status: ', self.status.value, '\n')
@@ -260,7 +263,7 @@ class ReplicaManager(threading.Thread):
                 new = self.value_ts.value()
                 response = (val, new)
                 stable = True
-                print('Value timestamp: ', self.value_ts.value())
+                print('Value timestamp: ', self.value_ts.value(), '\n')
 
         if not stable:
             self.query_results[(q_op, q_prev)] = queue.Queue(maxsize=1)
@@ -279,7 +282,7 @@ class ReplicaManager(threading.Thread):
                 self.replica_ts.increment(self._id)
                 ts = list(u_prev[:])
                 ts[self._id] = self.replica_ts.value()[self._id]
-                print('Replica timestamp: ', self.replica_ts)
+                print('Replica timestamp: ', self.replica_ts, '\n')
 
             ts = VectorClock.fromiterable(ts)
 
@@ -335,7 +338,7 @@ class ReplicaManager(threading.Thread):
                 except queue.Empty:
                     break
 
-            print('------------------------')
+            print('------------------------\n')
 
     def get_status(self):
         return self.status.value
@@ -352,7 +355,7 @@ class ReplicaManager(threading.Thread):
             self.status = Status.ACTIVE
 
     def _apply_query(self, q_op):
-        print('Query applied. ', q_op)
+        print('Query applied. ', q_op, '\n')
         val = None
 
         op, *params = q_op
@@ -362,7 +365,7 @@ class ReplicaManager(threading.Thread):
         return val
 
     def _apply_update(self, u_op):
-        print('Update applied.', u_op)
+        print('Update applied.', u_op, '\n')
 
         op, *params = u_op
         update = self._parse_u_op(op)
@@ -383,9 +386,10 @@ class ReplicaManager(threading.Thread):
             ts = VectorClock.fromiterable(ts)
             u_prev = VectorClock.fromiterable(u_prev)
             with self.rts_lock, self.log_lock:
-                if not ts <= self.replica_ts and record not in self.update_log:
-                    new_record = (_id, ts, u_op, u_prev, u_id)
-                    self.update_log.append(new_record)
+                new_record = (_id, ts, u_op, u_prev, u_id)
+                if new_record not in self.update_log:
+                    if not ts <= self.replica_ts:
+                        self.update_log.append(new_record)
 
     def _get_stable_updates(self):
         stable = []
