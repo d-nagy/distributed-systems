@@ -522,7 +522,10 @@ if __name__ == '__main__':
 
         print('Server ready.')
 
-        daemon.requestLoop()
+        if platform == 'win32':
+            threading.Thread(target=daemon.requestLoop).start()
+        else:
+            daemon.requestLoop()
 
         with Pyro4.locateNS() as ns:
             ns.remove(NAME)

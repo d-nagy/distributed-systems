@@ -1,6 +1,7 @@
 import Pyro4
 import random
 import signal
+import threading
 import uuid
 from enum import Enum
 from vectorclock import VectorClock
@@ -120,7 +121,10 @@ if __name__ == '__main__':
 
         print('Front end ready.')
 
-        daemon.requestLoop()
+        if platform == 'win32':
+            threading.Thread(target=daemon.requestLoop).start()
+        else:
+            daemon.requestLoop()
 
         with Pyro4.locateNS() as ns:
             ns.remove(NAME)
