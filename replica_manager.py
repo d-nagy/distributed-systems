@@ -497,10 +497,7 @@ if __name__ == '__main__':
     try:
         rm = ReplicaManager(ID, stopper, STATUS)
         handler = SignalHandler(stopper=stopper, rm=rm, daemon=daemon)
-        if platform != 'win32':
-            signal.signal(signal.SIGINT, handler)
-        else:
-            signal.signal(signal.CTRL_C_EVENT, handler)
+        signal.signal(signal.SIGINT, handler)
         rm.start()
 
         if not rm.isAlive():

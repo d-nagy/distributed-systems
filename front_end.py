@@ -113,11 +113,7 @@ if __name__ == '__main__':
     try:
         fe = FrontEnd()
         handler = SignalHandler(daemon=daemon)
-        if platform != 'win32':
-            signal.signal(signal.SIGINT, handler)
-        else:
-            signal.signal(signal.CTRL_C_EVENT, handler)
-
+        signal.signal(signal.SIGINT, handler)
         uri = daemon.register(fe)
         with Pyro4.locateNS() as ns:
             ns.register(NAME, uri)
