@@ -195,6 +195,7 @@ class ReplicaManager(threading.Thread):
         # Replica status properties
         self.failure_prob = 0.1
         self.overload_prob = 0.2
+        self.auto_status = True
         if status not in [n.value for n in list(Status)]:
             print('Invalid status provided, defaulting to active.')
             self.status = Status.ACTIVE
@@ -226,7 +227,7 @@ class ReplicaManager(threading.Thread):
                 self.other_replicas = self._find_replicas()
 
                 with self.rts_lock:
-                    print('--- SENDING GOSSIP ---')
+                    print('\n--- SENDING GOSSIP ---')
                     for r_id, rm in self.other_replicas:
                         r_ts = self.ts_table[r_id]
                         m_log = self._get_recent_updates(r_ts)
@@ -239,12 +240,13 @@ class ReplicaManager(threading.Thread):
                             rm.send_gossip(m_log,
                                            self.replica_ts.value(),
                                            self._id)
-                            print(f'Gossip sent to RM {r_id}\n')
+                            print(f'Gossip sent to RM {r_id}')
                         except Pyro4.errors.CommunicationError as e:
-                            print(f'Failed to send gossip to RM {r_id}\n')
-                    print('----------------------\n')
+                            print(f'Failed to send gossip to RM {r_id}')
+                    print('----------------------')
 
-            self._update_status()
+            if self.auto_status:
+                self._update_status()
             print('Status: ', self.status.value, '\n')
             self.stopper.wait(self.interval)
 
@@ -303,7 +305,7 @@ class ReplicaManager(threading.Thread):
     @Pyro4.oneway
     def send_gossip(self, m_log, m_ts, r_id):
         if self.status != Status.OFFLINE:
-            print('--- RECEIVING GOSSIP ---')
+            print('\n--- RECEIVING GOSSIP ---')
             print(f'\nGossip received from RM {r_id}')
             print(m_ts)
             print(m_log)
@@ -338,10 +340,19 @@ class ReplicaManager(threading.Thread):
                 except queue.Empty:
                     break
 
-            print('------------------------\n')
+            print('------------------------')
 
     def get_status(self):
         return self.status.value
+
+    def set_status(self, status):
+        self.status = Status(status)
+
+    def toggle_auto_status(self, auto):
+        if auto:
+            self.auto_status = True
+        else:
+            self.auto_status = False
 
     def _update_status(self):
         overloaded = random.random()
