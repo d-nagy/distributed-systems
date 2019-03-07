@@ -46,17 +46,21 @@ class FrontEnd:
                 str(uuid.uuid4())
             )
 
+            print('Update sent: ', request)
+
             self.ts.merge(VectorClock.fromiterable(rm_ts))
 
-            print('Timestamp: ', self.ts.value())
+            print('Front end timestamp: ', self.ts.value())
             return 'Update submitted!'
 
         elif r_type == RType.QUERY:
             val, rm_ts = self.rm.send_query(request, self.ts.value())
 
+            print('Query sent: ', request)
+
             self.ts.merge(VectorClock.fromiterable(rm_ts))
 
-            print('Timestamp: ', self.ts.value())
+            print('Front end timestamp: ', self.ts.value())
             return val
 
     def _choose_replica(self):
