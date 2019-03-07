@@ -284,6 +284,9 @@ class Client:
 if __name__ == '__main__':
     try:
         client = Client()
-        client.main()
+        try:
+            client.main()
+        except KeyboardInterrupt:
+            print('\nCTRL+C pressed, exiting.')
     except Pyro4.errors.NamingError:
         print('Could not find Pyro nameserver, exiting.')
