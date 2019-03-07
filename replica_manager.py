@@ -201,6 +201,9 @@ class ReplicaManager(threading.Thread):
             self.status = Status.ACTIVE
         else:
             self.status = Status(status)
+            self.auto_status = False
+            print(f'Status set to {status}.',
+                  'Automatic status updating disabled.')
 
         # Gossip Architecture State
         self.value_ts = VectorClock(REPLICA_NUM)
@@ -268,10 +271,10 @@ class ReplicaManager(threading.Thread):
                 print('Value timestamp: ', self.value_ts.value(), '\n')
 
         if not stable:
-            self.query_results[(q_op, q_prev)] = queue.Queue(maxsize=1)
+            self.query_results[(q_op, q_prev.value())] = queue.Queue(maxsize=1)
             self.pending_queries.put((q_op, q_prev))
-            response = self.query_results[(q_op, q_prev)].get()
-            del self.query_results[(q_op, q_prev)]
+            response = self.query_results[(q_op, q_prev.value())].get()
+            del self.query_results[(q_op, q_prev.value())]
 
         return response
 
@@ -306,7 +309,7 @@ class ReplicaManager(threading.Thread):
     def send_gossip(self, m_log, m_ts, r_id):
         if self.status != Status.OFFLINE:
             print('\n--- RECEIVING GOSSIP ---')
-            print(f'\nGossip received from RM {r_id}')
+            print(f'Gossip received from RM {r_id}')
             print(m_ts)
             print(m_log)
             print()
@@ -335,7 +338,8 @@ class ReplicaManager(threading.Thread):
                         if q_prev <= self.value_ts:
                             val = self._apply_query(q_op)
                             new = self.value_ts.value()
-                            self.query_results[(q_op, q_prev)].put((val, new))
+                            self.query_results[(q_op, q_prev.value())].put(
+                                (val, new))
 
                 except queue.Empty:
                     break
@@ -490,7 +494,6 @@ if __name__ == '__main__':
         NAME = f'network.replica.{ID}'
         REPLICADIR = f'replica_{ID}/'
         STATUS = argv[2]
-        print(ID)
     except ValueError:
         print('Invalid server ID provided, exiting.')
         exit()
