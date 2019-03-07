@@ -31,7 +31,8 @@ class FrontEnd:
         if self.rm is not None:
             try:
                 rm_status = self.rm.get_status()
-                if rm_status == Status.OFFLINE:
+                print(rm_status)
+                if rm_status == Status.OFFLINE.value:
                     self.rm = self._choose_replica()
             except Pyro4.errors.ConnectionClosedError:
                 self.rm = self._choose_replica()
@@ -67,15 +68,19 @@ class FrontEnd:
         stat = {server: server.get_status() for server in self.servers}
         available = []
         num_offline = list(stat.values()).count(Status.OFFLINE.value)
-        num_overloaded = list(stat.values()).count(Status.OVERLOADED.value)
+        num_active = list(stat.values()).count(Status.ACTIVE.value)
 
-        if num_offline == len(self.servers):
-            raise Exception('All servers offline')
-        elif num_overloaded < len(self.servers):
+        if num_active > 0:
             available = [k for k in stat.keys()
                          if stat[k] == Status.ACTIVE.value]
+        elif num_offline == len(self.servers):
+            raise Exception('All servers offline')
         else:
-            available = list(stat.keys())
+            available = [k for k in stat.keys()
+                         if stat[k] != Status.OFFLINE.value]
+
+        if not available:
+            return None
 
         return random.choice(available)
 
