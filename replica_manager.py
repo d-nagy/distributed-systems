@@ -328,7 +328,6 @@ class ReplicaManager(threading.Thread):
                     self._execute_update(u_op, u_id, ts)
 
             self.ts_table[r_id] = m_ts
-            # self._trim_update_log()
 
             while True:
                 try:
@@ -427,22 +426,6 @@ class ReplicaManager(threading.Thread):
                     recent.append(new_record)
 
         return recent
-
-    def _trim_update_log(self):
-        for_removal = []
-
-        with self.log_lock:
-            for record in self.update_log:
-                _id, r_ts, u_op, u_prev, u_id = record
-
-                removable = all([t_ts.value()[_id] >= r_ts.value()[_id]
-                                 for t_ts in self.ts_table
-                                 if t_ts is not None])
-                if removable:
-                    for_removal.append(u_id)
-
-            self.update_log = [r for r in self.update_log
-                               if r[-1] not in for_removal]
 
     def _find_replicas(self):
         servers = []
