@@ -11,8 +11,9 @@ from sys import path, argv, platform
 from tempfile import NamedTemporaryFile
 
 
-REPLICA_NUM = 3
+REPLICA_NUM = 3     # Number of replicas in system
 
+# Variables for data files
 movie_file = 'movies.csv'
 rating_file = 'ratings.csv'
 tag_file = 'tags.csv'
@@ -23,6 +24,16 @@ tags_fields = ['userId', 'movieId', 'tag', 'timestamp']
 
 
 def submit_rating(userId, title, rating):
+    '''
+    Submit a movie rating, overwriting an existing rating if one exists
+    for the given movie by the given user.
+
+    Params:
+        (int) userId:   the id of the user submitting the rating
+        (string) title: title of the movie to submit rating for
+        (float) rating: value of the rating (0 - 5)
+
+    '''
     movieId = get_movie_by_title(title)['movieId']
     existing_rating = get_movie_ratings(userId, None, movieId)
 
@@ -50,6 +61,15 @@ def submit_rating(userId, title, rating):
 
 
 def submit_tag(userId, title, tag):
+    '''
+    Submit a tag for a movie.
+
+    Params:
+        (int) userId:   the id of the user submitting the rating
+        (string) title: title of the movie to submit tag for
+        (string) tag:   word to tag the movie with
+
+    '''
     movieId = get_movie_by_title(title)['movieId']
     with open(tag_file, 'a', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, tags_fields)
@@ -59,6 +79,15 @@ def submit_tag(userId, title, tag):
 
 
 def get_avg_movie_rating(title):
+    '''
+    Get the average rating for a movie.
+
+    Params:
+        (string) title: title of the movie to get the average rating for
+
+    Returns:
+        movie_rating: average rating for the given movie
+    '''
     movieId = get_movie_by_title(title)['movieId']
     ratings = []
     with open(rating_file, newline='') as csvfile:
@@ -72,6 +101,17 @@ def get_avg_movie_rating(title):
 
 
 def get_movie_ratings(userId=None, title=None, movieId=None):
+    '''
+    Get movie ratings. If no arguments given, return all movie ratings.
+
+    Params:
+        (int) userId:   id of the user whose ratings to get
+        (string) title: title of the movie to get the ratings for
+        (int) movieId:  id of the movie to get the ratings for
+
+    Returns:
+        ratings: list of movie ratings for filter criteria provided
+    '''
     ratings = []
     with open(rating_file, newline='') as csvfile:
         reader = csv.DictReader(csvfile)
@@ -94,12 +134,30 @@ def get_movie_ratings(userId=None, title=None, movieId=None):
 
 
 def get_movie_genres(title):
+    '''
+    Get all the genres for a movie.
+
+    Params:
+        (string) title: title of movie to get genres for
+
+    Returns:
+        genres: list of genres for the movie
+    '''
     movie = get_movie_by_title(title)
     genres = movie['genres'].split('|')
     return genres
 
 
 def get_movie_by_title(title):
+    '''
+    Get a movie based on the title.
+
+    Params:
+        (string) title: title of movie to get
+
+    Returns:
+        movie: dictionary representing line from the movie CSV file
+    '''
     movie = []
     with open(movie_file, newline='') as csvfile:
         reader = csv.DictReader(csvfile)
@@ -118,6 +176,15 @@ def get_movie_by_title(title):
 
 
 def get_movie_by_id(movieId):
+    '''
+    Get a movie based on the movieId.
+
+    Params:
+        (string) movieId: ID of movie to get
+
+    Returns:
+        movie: dictionary representing line from the movie CSV file
+    '''
     movie = []
     with open(movie_file, newline='') as csvfile:
         reader = csv.DictReader(csvfile)
@@ -133,6 +200,15 @@ def get_movie_by_id(movieId):
 
 
 def get_movie_tags(title):
+    '''
+    Get all the tags for a movie.
+
+    Params:
+        (string) title: title of movie to get tags for
+
+    Returns:
+        genres: list of tags for the movie
+    '''
     movieId = get_movie_by_title(title)['movieId']
     tags = []
     with open(tag_file, newline='') as csvfile:
@@ -145,6 +221,15 @@ def get_movie_tags(title):
 
 
 def search_by_title(title):
+    '''
+    Search movies by title.
+
+    Params:
+        (string) title: title to match against
+
+    Returns:
+        movies: list of movies whose titles contain title as a substring
+    '''
     title = title.lower()
     movies = []
     with open(movie_file, newline='') as csvfile:
@@ -156,6 +241,15 @@ def search_by_title(title):
 
 
 def search_by_genre(genre):
+    '''
+    Search movies by genre.
+
+    Params:
+        (string) genre: genre to match against
+
+    Returns:
+        movies: list of movies belonging to the given genre
+    '''
     genre = genre.lower()
     movies = []
     with open(movie_file, newline='') as csvfile:
@@ -168,6 +262,15 @@ def search_by_genre(genre):
 
 
 def search_by_tag(tag):
+    '''
+    Search movies by tag.
+
+    Params:
+        (string) tag: tag to match against
+
+    Returns:
+        movies: list of movies that have been tagged with tag
+    '''
     tag = tag.lower()
     movies = []
     with open(tag_file, newline='') as csvfile:
@@ -187,6 +290,11 @@ def search_by_tag(tag):
 
 @Pyro4.expose
 class ReplicaManager(threading.Thread):
+    '''
+    Class for a Replica Server within the distributed system, implementing
+    the gossip architecture.
+    '''
+
     def __init__(self, replica_id, stopper, status=None):
         super().__init__()
 
@@ -206,23 +314,30 @@ class ReplicaManager(threading.Thread):
                   'Automatic status updating disabled.')
 
         # Gossip Architecture State
-        self.value_ts = VectorClock(REPLICA_NUM)
-        self.replica_ts = VectorClock(REPLICA_NUM)
+        self.value_ts = VectorClock(REPLICA_NUM)  # aka data timestamp
+        self.replica_ts = VectorClock(REPLICA_NUM)  # aka log timestamp
         self.update_log = []
         self.ts_table = [VectorClock(REPLICA_NUM) if i != self._id else None
                          for i in range(REPLICA_NUM)]
         self.executed = []
         self.pending_queries = queue.Queue()
         self.query_results = {}
-        self.interval = 8.0
+        self.interval = 8.0  # interval between gossip exchanges
         self.other_replicas = self._find_replicas()
 
-        self.stopper = stopper
-        self.vts_lock = threading.Lock()
-        self.rts_lock = threading.Lock()
-        self.log_lock = threading.Lock()
+        self.stopper = stopper  # Used to indicate to server to stop
+
+        # Locks for objects shared between threads
+        self.vts_lock = threading.Lock()    # for value_ts
+        self.rts_lock = threading.Lock()    # for replica_ts
+        self.log_lock = threading.Lock()    # for update_log
 
     def run(self):
+        '''
+        Override of threading.Thread run() method. Sends gossip to other
+        replica managers periodically.
+        '''
+
         while not self.stopper.is_set():
             if self.status != Status.OFFLINE:
                 for r_id, rm in self.other_replicas:
@@ -235,8 +350,6 @@ class ReplicaManager(threading.Thread):
                         r_ts = self.ts_table[r_id]
                         m_log = self._get_recent_updates(r_ts)
 
-                        # print(f'\nCreating gossip for RM {r_id}')
-                        # print(f'RM {r_id} Timestamp: {r_ts.value()}')
                         print(f'Updates to send to RM {r_id}: ', m_log)
 
                         try:
@@ -256,14 +369,27 @@ class ReplicaManager(threading.Thread):
         print('Stopper set, gossip thread stopping.')
 
     def send_query(self, q_op, q_prev):
+        '''
+        Method invoked by the front end to send a query.
+
+        Params:
+            (string) q_op:  query command
+            (tuple) q_prev: vector timestamp of front end
+
+        Returns:
+            response: results of query
+        '''
+
         print('Query received: ', q_op, q_prev)
         response = None
 
         q_prev = VectorClock.fromiterable(q_prev)
 
+        # stable = are we up to date enough to handle the query correctly?
         stable = False
+
         with self.vts_lock:
-            if q_prev <= self.value_ts:
+            if q_prev <= self.value_ts:  # stability criteria for query
                 val = self._apply_query(q_op)
                 new = self.value_ts.value()
                 response = (val, new)
@@ -271,17 +397,35 @@ class ReplicaManager(threading.Thread):
                 print('Value timestamp: ', self.value_ts.value(), '\n')
 
         if not stable:
+            # if not stable, add to a dictionary of pending queries and wait
             self.query_results[(q_op, q_prev.value())] = queue.Queue(maxsize=1)
             self.pending_queries.put((q_op, q_prev))
+
+            # Wait for query to be executed after some gossip exchange
             response = self.query_results[(q_op, q_prev.value())].get()
+
+            # Remove entry from pending query dictionary
             del self.query_results[(q_op, q_prev.value())]
 
         return response
 
     def send_update(self, u_op, u_prev, u_id):
+        '''
+        Method invoked by the front end to send an update.
+
+        Params:
+            (string) u_op:  update command
+            (tuple) u_prev: vector timestamp of front end
+            (string) u_id:  unique ID for update
+
+        Returns:
+            ts: timestamp representing having executed the update or None
+                if the update has already been executed
+        '''
         print('Update received: ', u_op, u_prev, u_id)
         ts = None
 
+        # Add update to log if it hasn't already been executed
         if u_id not in self.executed:
             with self.rts_lock:
                 self.replica_ts.increment(self._id)
@@ -297,8 +441,9 @@ class ReplicaManager(threading.Thread):
                 self.update_log.append(log_record)
             print('Update record: ', log_record)
 
+            # Execute update if it is stable
             with self.vts_lock:
-                if u_prev <= self.value_ts:
+                if u_prev <= self.value_ts:  # stability criteria for query
                     self._execute_update(u_op, u_id, ts)
 
             return ts.value()
@@ -307,6 +452,19 @@ class ReplicaManager(threading.Thread):
 
     @Pyro4.oneway
     def send_gossip(self, m_log, m_ts, r_id):
+        '''
+        Method invoked by other replica managers to send gossip.
+
+        Params:
+            (string) m_log: recent updates from replica manager
+            (tuple) m_ts:   log timestamp of sending replica manager
+            (string) r_id:  ID of sending replica manager
+
+        Returns:
+            ts: timestamp representing having executed the update or None
+                if the update has already been executed
+        '''
+
         if self.status != Status.OFFLINE:
             print('\n--- RECEIVING GOSSIP ---')
             print(f'Gossip received from RM {r_id}')
@@ -314,21 +472,27 @@ class ReplicaManager(threading.Thread):
             print(m_log)
             print()
 
+            # Merge m_log into update log
             self._merge_update_log(m_log)
 
+            # Merge our replica timestamp with m_ts
             m_ts = VectorClock.fromiterable(m_ts)
             with self.rts_lock:
                 self.replica_ts.merge(m_ts)
                 print('Replica timestamp: ', self.replica_ts)
 
+            # Execute all updates that have now become stable
             stable = self._get_stable_updates()
             for update in stable:
                 _id, ts, u_op, u_prev, u_id = update
                 with self.vts_lock:
                     self._execute_update(u_op, u_id, ts)
 
+            # Set the timestamp of the sending replica manager in our timestamp
+            # table
             self.ts_table[r_id] = m_ts
 
+            # Execute all stable pending queries
             while True:
                 try:
                     q_op, q_prev = self.pending_queries.get(block=False)
@@ -346,18 +510,38 @@ class ReplicaManager(threading.Thread):
             print('------------------------')
 
     def get_status(self):
+        '''
+        Method invoked by front end to query the server status.
+
+        Returns:
+            status of the server
+        '''
+
         return self.status.value
 
     def set_status(self, status):
+        '''
+        Method invoked by status_control.py to set the server status.
+        '''
+
         self.status = Status(status)
 
     def toggle_auto_status(self, auto):
+        '''
+        Method invoked by status_control.py to set the server status to
+        update automatically or not.
+        '''
+
         if auto:
             self.auto_status = True
         else:
             self.auto_status = False
 
     def _update_status(self):
+        '''
+        Set the server status probabilistically.
+        '''
+
         overloaded = random.random()
         failed = random.random()
 
@@ -369,6 +553,16 @@ class ReplicaManager(threading.Thread):
             self.status = Status.ACTIVE
 
     def _apply_query(self, q_op):
+        '''
+        Execute a query command.
+
+        Params:
+            (string) q_op: query command to execute
+
+        Returns:
+            val: result of query
+        '''
+
         print('Query applied. ', q_op, '\n')
         val = None
 
@@ -379,6 +573,13 @@ class ReplicaManager(threading.Thread):
         return val
 
     def _apply_update(self, u_op):
+        '''
+        Execute an update command.
+
+        Params:
+            (string) u_op: update command to execute
+        '''
+
         print('Update applied.', u_op, '\n')
 
         op, *params = u_op
@@ -386,15 +587,32 @@ class ReplicaManager(threading.Thread):
         update(*params)
 
     def _execute_update(self, u_op, u_id, ts):
+        '''
+        Execute an update.
+
+        Params:
+            (string) u_op: update command to execute
+            (string) u_id: ID of update to execute
+            (VectorClock) ts: timestamp of update to execute
+        '''
+
+        # Return immediately if update has already been executed
         if u_id in self.executed:
             return
 
-        self._apply_update(u_op)
-        self.value_ts.merge(ts)
-        self.executed.append(u_id)
+        self._apply_update(u_op)  # Execute the update
+        self.value_ts.merge(ts)  # Update the value timestamp
+        self.executed.append(u_id)  # Add update to executed updates
         print('Value timestamp: ', self.value_ts)
 
     def _merge_update_log(self, m_log):
+        '''
+        Merge the update log with updates from a gossip message.
+
+        Params:
+            m_log: list of updates from a gossip message
+        '''
+
         for record in m_log:
             _id, ts, u_op, u_prev, u_id = record
             ts = VectorClock.fromiterable(ts)
@@ -406,6 +624,13 @@ class ReplicaManager(threading.Thread):
                         self.update_log.append(new_record)
 
     def _get_stable_updates(self):
+        '''
+        Retrieve all stable updates from the update log.
+
+        Returns:
+            stable: list of updates that can be executed.
+        '''
+
         stable = []
 
         with self.vts_lock, self.log_lock:
@@ -417,6 +642,19 @@ class ReplicaManager(threading.Thread):
         return stable
 
     def _get_recent_updates(self, r_ts):
+        '''
+        Retrieve updates from update log that are more recent than our recorded
+        value of the timestamp of another replica manager.
+
+        Params:
+            (VectorClock) r_ts: Timestamp of another replica manager, sent in
+                                gossip
+
+        Returns:
+            recent: all updates from update log that are more recent than the
+                    given timestamp
+        '''
+
         recent = []
         with self.log_lock:
             for record in self.update_log:
@@ -428,13 +666,19 @@ class ReplicaManager(threading.Thread):
         return recent
 
     def _find_replicas(self):
+        '''
+        Find all online replica managers.
+
+        Returns:
+            servers: list of remote server objects for replica managers
+        '''
+
         servers = []
         try:
             with Pyro4.locateNS() as ns:
                 for server, uri in ns.list(prefix="network.replica.").items():
                     server_id = int(server.split('.')[-1])
                     if server_id != self._id:
-                        # print("found replica", server)
                         servers.append((server_id, Pyro4.Proxy(uri)))
         except Pyro4.errors.NamingError:
             print('Could not find Pyro nameserver.')
@@ -443,6 +687,16 @@ class ReplicaManager(threading.Thread):
 
     @staticmethod
     def _parse_q_op(op):
+        '''
+        Match query command strings with query functions.
+
+        Params:
+            (string) op: query command
+
+        Returns:
+            function corresponding to the query command
+        '''
+
         return {
             ROp.GET_AVG_RATING.value: get_avg_movie_rating,
             ROp.GET_RATINGS.value: get_movie_ratings,
@@ -456,6 +710,16 @@ class ReplicaManager(threading.Thread):
 
     @staticmethod
     def _parse_u_op(op):
+        '''
+        Match update command strings with update functions.
+
+        Params:
+            (string) op: update command
+
+        Returns:
+            function corresponding to the update command
+        '''
+
         return {
             ROp.ADD_RATING.value: submit_rating,
             ROp.ADD_TAG.value: submit_tag
@@ -495,9 +759,13 @@ if __name__ == '__main__':
     daemon = Pyro4.Daemon()
 
     try:
-        rm = ReplicaManager(ID, stopper, STATUS)
+        rm = ReplicaManager(ID, stopper, STATUS)  # Create replica manager
+
+        # Setup signal handler that will shut down our program gracefully
         handler = SignalHandler(stopper=stopper, rm=rm, daemon=daemon)
         signal.signal(signal.SIGINT, handler)
+
+        # Start the gossip thread of the replica manager
         rm.start()
 
         if not rm.isAlive():
@@ -505,17 +773,20 @@ if __name__ == '__main__':
         else:
             print('Gossip thread started.')
 
+        # Register replica manager with Pyro daemon and nameserver
         uri = daemon.register(rm)
         with Pyro4.locateNS() as ns:
             ns.register(NAME, uri)
 
         print('Server ready.')
 
+        # Start listening for remote calls
         if platform == 'win32':
             threading.Thread(target=daemon.requestLoop).start()
         else:
             daemon.requestLoop()
 
+        # Before exiting, unregister replica manager from name server
         with Pyro4.locateNS() as ns:
             ns.remove(NAME)
 

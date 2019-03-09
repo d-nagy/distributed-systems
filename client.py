@@ -74,6 +74,10 @@ def format_search_result(result, search_var, search_val):
 
 
 class Client:
+    '''
+    Class for Client program of distributed system.
+    '''
+
     def __init__(self):
         self.menu_options = [
             ' 1. Rate a movie',
@@ -90,6 +94,18 @@ class Client:
         self.frontend = self._find_frontend()
 
     def send_request(self, request):
+        '''
+        Send a request to the front end, handling any errors which occur.
+
+        Params:
+            (tuple) request: request to send, consisting of a command and args
+
+        Returns:
+            (bool) error: whether an error occurred at any point
+            result: if error, this is a string describing the error. Otherwise
+                    the response to the request by the front end.
+        '''
+
         result = None
         error = True
 
@@ -125,6 +141,10 @@ class Client:
         print('Enter option: ', end='')
 
     def main(self):
+        '''
+        Main loop of client program.
+        '''
+
         userId = get_user_id()
 
         while True:
@@ -271,6 +291,13 @@ class Client:
 
     @staticmethod
     def _find_frontend():
+        '''
+        Find the front end server
+
+        Returns:
+            fe: remote object for front end server
+        '''
+
         fe = None
         with Pyro4.locateNS() as ns:
             try:

@@ -14,20 +14,38 @@ REPLICA_NUM = 3
 
 @Pyro4.expose
 class FrontEnd:
+    '''
+    Class for Front End Server within the distributed system.
+    '''
+
     def __init__(self):
         self.servers = []
         self.rm = None
 
+        # Initial selection of replica manager to communicate with
         try:
             self.rm = self._choose_replica()
         except ValueError as e:
             print(e)
 
-        self.ts = VectorClock(REPLICA_NUM)
+        self.ts = VectorClock(REPLICA_NUM)  # Vector timestamp of front end
 
     def send_request(self, request):
+        '''
+        Method invoked by client to send a request.
+
+        Params:
+            (tuple) request: command to execute and arguments for the command
+
+        Returns:
+            If the request is a query, return the results of the query,
+            otherwise a confirmation message.
+        '''
+
         r_type = self._request_type(request)
 
+        # Find a replica manager to send request to if the original is
+        # unavailable
         if self.rm is not None:
             try:
                 rm_status = self.rm.get_status()
@@ -64,6 +82,13 @@ class FrontEnd:
             return val
 
     def _choose_replica(self):
+        '''
+        Select a replica manager to communicate with.
+
+        Return:
+            Remote object for a replica manager
+        '''
+
         for server in self.servers:
             server._pyroRelease()
 
@@ -90,6 +115,16 @@ class FrontEnd:
 
     @staticmethod
     def _request_type(request):
+        '''
+        Determine whether a request is an update or query.
+
+        Params:
+            (tuple) request: request to check
+
+        Returns:
+            Enum representing the type of request
+        '''
+
         op = request[0]
         op_type = op.split('.')[0]
 
@@ -103,6 +138,13 @@ class FrontEnd:
 
     @staticmethod
     def _find_replicas():
+        '''
+        Find all online replica managers.
+
+        Returns:
+            servers: list of remote server objects for replica managers
+        '''
+
         servers = []
         with Pyro4.locateNS() as ns:
             for server, uri in ns.list(prefix="network.replica.").items():
@@ -121,20 +163,26 @@ if __name__ == '__main__':
     daemon = Pyro4.Daemon()
 
     try:
-        fe = FrontEnd()
+        fe = FrontEnd()  # Create front end
+
+        # Setup signal handler that will shut down our program gracefully
         handler = SignalHandler(daemon=daemon)
         signal.signal(signal.SIGINT, handler)
+
+        # Register front end with Pyro daemon and nameserver
         uri = daemon.register(fe)
         with Pyro4.locateNS() as ns:
             ns.register(NAME, uri)
 
         print('Front end ready.')
 
+        # Start listening for remote calls
         if platform == 'win32':
             threading.Thread(target=daemon.requestLoop).start()
         else:
             daemon.requestLoop()
 
+        # Before exiting, unregister replica manager from name server
         with Pyro4.locateNS() as ns:
             ns.remove(NAME)
 

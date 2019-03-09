@@ -9,7 +9,7 @@ class SignalHandler:
         self.daemon = daemon
 
     def __call__(self, signum, frame):
-        print('Handler called.')
+        print('\nSignal handler called.')
         if self.stopper is not None:
             self.stopper.set()
 
